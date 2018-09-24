@@ -1,3 +1,5 @@
+#![feature(box_syntax, box_patterns)]
+
 mod octree;
 
 pub use self::octree::*;
