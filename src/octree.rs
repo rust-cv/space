@@ -1,26 +1,33 @@
-use crate::Contains;
 use itertools::Itertools;
-use nalgebra::{Scalar, Vector3};
+use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
 use derive_more as dm;
 
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 pub struct Octree<T> {
-    tree: Option<Box<MortonOctree<T>>>,
+    tree: MortonOctree<T>,
     /// Dimensions of the top level node are from [-2**level, 2**level].
     level: i32,
 }
 
 impl<T> Octree<T> {
+    /// Dimensions of the top level node are fixed in the range [-2**level, 2**level].
+    pub fn new(level: i32) -> Octree<T> {
+        Octree {
+            tree: MortonOctree::default(),
+            level: level,
+        }
+    }
+
     /// Insert an item with a point and return the existing item if they would both occupy the same space.
-    pub fn insert<S>(&mut self, point: Vector3<S>, item: T) -> Option<T>
+    pub fn insert<S>(&mut self, point: Vector3<S>, item: T)
     where
         S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
     {
         let bound = (S::one() + S::one()).powi(self.level);
-        while point.iter().any(|n| n.abs() > bound) {
-            self.expand();
+        if point.iter().any(|n| n.abs() > bound) {
+            panic!("space::Octree::insert(): tried to add a point outside the Octree bounds");
         }
 
         // Convert the point into normalized space.
@@ -31,76 +38,101 @@ impl<T> Octree<T> {
             .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
                 use itertools::FoldWhile::{Continue, Done};
                 match node {
-                    Some(box MortonOctree::Node(ns)) => {
+                    MortonOctree::Node(ns) => {
                         // The index into the array to access the next octree node
                         let subindex = morton.get_level(i);
                         Continue((&mut ns[subindex], i))
                     }
-                    Some(box MortonOctree::Leaf(_, _)) => Done((node, old_ix)),
-                    None => Done((node, old_ix)),
+                    MortonOctree::Leaf(_, _) => Done((node, old_ix)),
+                    MortonOctree::None => Done((node, old_ix)),
                 }
             }).into_inner();
 
         match tree_part {
-            Some(box ref mut other) => {
-                match other {
-                    MortonOctree::Leaf(other, other_morton) => {
-                        // If they have the same code then we can't insert this so replace the existing one.
-                        let mut item = item;
-                        if morton == *other_morton {
-                            std::mem::swap(other, &mut item);
-                            Some(item)
-                        } else {
-                            // Keep expanding the octree down until they differ at some level.
-                            for i in level + 1..NUM_BITS_PER_DIM {
-                                // If they are in the same subsection.
-                                if morton.get_level(i) == other_morton.get_level(i) {
-                                    // Make another Node to place them in.
-                                }
-                            }
-                        }
+            MortonOctree::Leaf(nodes, dest_morton) => {
+                // If they have the same code then add it to the same Vec and be done with it.
+                if morton == *dest_morton {
+                    nodes.push(item);
+                    return;
+                }
+                // Otherwise we must split them, which we must do outside of this scope due to the borrow.
+            }
+            MortonOctree::None => {
+                // Simply add a new leaf.
+                *tree_part = MortonOctree::Leaf(vec![item], morton);
+                return;
+            }
+            _ => {
+                unreachable!(
+                    "space::Octree::insert(): can only get None or Leaf in this code area"
+                );
+            }
+        }
+
+        let mut dest_old = MortonOctree::empty_node();
+        std::mem::swap(&mut dest_old, tree_part);
+
+        if let MortonOctree::Leaf(dest_vec, dest_morton) = dest_old {
+            // Set our initial reference to the default node in the dest.
+            let mut building_node = tree_part;
+            // Create deeper nodes till they differ at some level.
+            for i in level + 1..NUM_BITS_PER_DIM {
+                // We know for sure that the dest is a node.
+                if let MortonOctree::Node(box ref mut children) = building_node {
+                    if morton.get_level(i) == dest_morton.get_level(i) {
+                        children[morton.get_level(i)] = MortonOctree::empty_node();
+                        building_node = &mut children[morton.get_level(i)];
+                    } else {
+                        // We reached the end where they differ, so put them both into the node.
+                        children[morton.get_level(i)] = MortonOctree::Leaf(vec![item], morton);
+                        children[dest_morton.get_level(i)] =
+                            MortonOctree::Leaf(dest_vec, dest_morton);
+                        return;
                     }
-                    _ => panic!(
-                        "space::Octree::insert(): we should never get a Node beyond the 21st level"
-                    ),
+                } else {
+                    unreachable!("space::Octree::insert(): cant get a non-node in this section");
                 }
             }
-            None => *tree_part = Some(box MortonOctree::Leaf(item, morton)),
+        } else {
+            unreachable!("space::Octree::insert(): cant get a non-leaf in this code area")
         }
     }
 
-    fn expand(&mut self) {
-        self.level += 1;
-        match &mut self.tree {
-            Some(box MortonOctree::Node(ref mut ns)) => {
-                // We must create 8 new nodes that each contain one of the old nodes in one of their corners.
-                for i in 0..8 {
-                    let mut temp = None;
-                    std::mem::swap(&mut temp, &mut ns[i]);
-                    ns[i] = if let Some(n) = temp {
-                        let mut children = [None, None, None, None, None, None, None, None];
-                        children[7 - i] = Some(n);
-                        Some(Box::new(MortonOctree::Node(children)))
-                    } else {
-                        None
-                    };
-                }
-            }
-            _ => {}
-        }
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.tree.iter()
     }
 }
 
 /// Tree with space implicitly divided based on a Morton code.
 #[derive(Clone, Debug)]
 enum MortonOctree<T> {
-    Node([Option<Box<MortonOctree<T>>>; 8]),
-    Leaf(T, Morton),
+    Node(Box<[MortonOctree<T>; 8]>),
+    Leaf(Vec<T>, Morton),
+    None,
+}
+
+impl<T> MortonOctree<T> {
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        use either::Either::*;
+        match self {
+            MortonOctree::Node(box ref n) => Left(MortonOctreeIter {
+                nodes: vec![(n, 0)],
+                vec_iter: [].iter(),
+            }),
+            MortonOctree::Leaf(ref item, _) => Right(item.iter()),
+            MortonOctree::None => Right([].iter()),
+        }
+    }
+
+    fn empty_node() -> Self {
+        use self::MortonOctree::*;
+        Node(box [None, None, None, None, None, None, None, None])
+    }
 }
 
 impl<T> Default for MortonOctree<T> {
     fn default() -> Self {
-        MortonOctree::Node([None, None, None, None, None, None, None, None])
+        MortonOctree::None
     }
 }
 
@@ -112,6 +144,7 @@ const NUM_BITS_PER_DIM: usize = 64 / 3;
 const MORTON_HIGHEST_BITS: Morton = Morton(0x7000_0000_0000_0000);
 
 impl Morton {
+    #[inline]
     fn get_level(self, level: usize) -> usize {
         ((self & (MORTON_HIGHEST_BITS >> (3 * level))) >> (3 * (NUM_BITS_PER_DIM - level - 1))).0
             as usize
@@ -122,6 +155,7 @@ impl<S> From<Vector3<S>> for Morton
 where
     S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
 {
+    #[inline]
     fn from(point: Vector3<S>) -> Morton {
         let point = point.map(|x| {
             (x * (S::one() + S::one()).powi(NUM_BITS_PER_DIM as i32))
@@ -132,9 +166,38 @@ where
     }
 }
 
+struct MortonOctreeIter<'a, T> {
+    nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>,
+    vec_iter: std::slice::Iter<'a, T>,
+}
+
+impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
+    type Item = &'a T;
+    fn next(&mut self) -> Option<&'a T> {
+        self.vec_iter.next().or_else(|| {
+            while let Some((node, ix)) = self.nodes.pop() {
+                if ix != 7 {
+                    self.nodes.push((node, ix + 1));
+                }
+                match node[ix] {
+                    MortonOctree::Node(ref children) => self.nodes.push((children, 0)),
+                    MortonOctree::Leaf(ref item, _) => {
+                        self.vec_iter = item.iter();
+                        // This wont work if there is ever an empty vec.
+                        return self.vec_iter.next();
+                    }
+                    _ => {}
+                }
+            }
+            None
+        })
+    }
+}
+
 /// This allows the lower bits to be spread into every third bit.
 ///
 /// This comes from https://www.forceflow.be/2013/10/07/morton-encodingdecoding-through-bit-interleaving-implementations/
+#[inline]
 fn split_by_3(x: u64) -> Morton {
     let x = x & 0x1fffff;
     let x = (x | x << 32) & 0x1f00000000ffff;
@@ -143,4 +206,33 @@ fn split_by_3(x: u64) -> Morton {
     let x = (x | x << 4) & 0x10c30c30c30c30c3;
     let x = (x | x << 2) & 0x1249249249249249;
     return Morton(x);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use itertools::izip;
+    use nalgebra::Vector3;
+    use rand::distributions::Open01;
+    use rand::rngs::SmallRng;
+    use rand::{Rng, SeedableRng};
+
+    #[test]
+    fn test_octree_rand() {
+        let mut xrng = SmallRng::from_seed([1; 16]);
+        let mut yrng = SmallRng::from_seed([4; 16]);
+        let mut zrng = SmallRng::from_seed([0; 16]);
+
+        let mut octree = Octree::new(0);
+        for (x, y, z) in izip!(
+            xrng.sample_iter(&Open01).take(5000),
+            yrng.sample_iter(&Open01).take(5000),
+            zrng.sample_iter(&Open01).take(5000)
+        ) {
+            let v: Vector3<f64> = Vector3::new(x, y, z);
+            octree.insert(v, 0);
+        }
+
+        assert_eq!(octree.iter().count(), 5000);
+    }
 }
