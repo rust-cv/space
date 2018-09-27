@@ -124,6 +124,7 @@ impl<T> MortonOctree<T> {
         }
     }
 
+    #[inline]
     fn empty_node() -> Self {
         use self::MortonOctree::*;
         Node(box [None, None, None, None, None, None, None, None])
