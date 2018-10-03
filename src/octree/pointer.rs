@@ -18,19 +18,21 @@ impl<T> Octree<T> {
         }
     }
 
-    /// Insert an item with a point and return the existing item if they would both occupy the same space.
-    pub fn insert<S>(&mut self, point: &Vector3<S>, item: T)
+    pub fn morton<S>(&self, point: &Vector3<S>) -> Morton
     where
         S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
     {
         let bound = (S::one() + S::one()).powi(self.level);
         if point.iter().any(|n| n.abs() > bound) {
-            panic!("space::Octree::insert(): tried to add a point outside the Octree bounds");
+            panic!("space::Octree::morton(): tried to compute a Morton outside the Octree bounds");
         }
 
         // Convert the point into normalized space.
-        let morton = Morton::from(point.map(|n| (n + bound) / bound.powi(2)));
+        Morton::from(point.map(|n| (n + bound) / bound.powi(2)))
+    }
 
+    /// Insert an item with a point and return the existing item if they would both occupy the same space.
+    pub fn insert(&mut self, morton: Morton, item: T) {
         // Traverse the tree down to the node we need to operate on.
         let (tree_part, level) = (0..NUM_BITS_PER_DIM)
             .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
@@ -96,12 +98,12 @@ impl<T> Octree<T> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> impl Iterator<Item = (Morton, &T)> {
         self.tree.iter()
     }
 }
 
-impl<'a, T, S> Extend<(Vector3<S>, T)> for Octree<T>
+impl<T, S> Extend<(Vector3<S>, T)> for Octree<T>
 where
     S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
 {
@@ -110,7 +112,7 @@ where
         I: IntoIterator<Item = (Vector3<S>, T)>,
     {
         for (v, item) in it.into_iter() {
-            self.insert(&v, item);
+            self.insert(self.morton(&v), item);
         }
     }
 }
@@ -124,7 +126,7 @@ where
         I: IntoIterator<Item = (&'a Vector3<S>, T)>,
     {
         for (v, item) in it.into_iter() {
-            self.insert(v, item);
+            self.insert(self.morton(v), item);
         }
     }
 }
@@ -138,15 +140,14 @@ enum MortonOctree<T> {
 }
 
 impl<T> MortonOctree<T> {
-    fn iter(&self) -> impl Iterator<Item = &T> {
+    fn iter(&self) -> impl Iterator<Item = (Morton, &T)> {
         use either::Either::*;
         match self {
-            MortonOctree::Node(box ref n) => Left(MortonOctreeIter {
-                nodes: vec![(n, 0)],
-                vec_iter: [].iter(),
-            }),
-            MortonOctree::Leaf(ref item, _) => Right(item.iter()),
-            MortonOctree::None => Right([].iter()),
+            MortonOctree::Node(box ref n) => Left(MortonOctreeIter::new(vec![(n, 0)])),
+            MortonOctree::Leaf(ref item, morton) => {
+                Right(item.iter().map(move |item| (*morton, item)))
+            }
+            MortonOctree::None => Left(MortonOctreeIter::new(vec![])),
         }
     }
 
@@ -166,28 +167,43 @@ impl<T> Default for MortonOctree<T> {
 struct MortonOctreeIter<'a, T> {
     nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>,
     vec_iter: std::slice::Iter<'a, T>,
+    vec_morton: Morton,
+}
+
+impl<'a, T> MortonOctreeIter<'a, T> {
+    fn new(nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>) -> Self {
+        MortonOctreeIter {
+            nodes,
+            vec_iter: [].iter(),
+            vec_morton: Morton(0),
+        }
+    }
 }
 
 impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
-    type Item = &'a T;
-    fn next(&mut self) -> Option<&'a T> {
-        self.vec_iter.next().or_else(|| {
-            while let Some((node, ix)) = self.nodes.pop() {
-                if ix != 7 {
-                    self.nodes.push((node, ix + 1));
-                }
-                match node[ix] {
-                    MortonOctree::Node(ref children) => self.nodes.push((children, 0)),
-                    MortonOctree::Leaf(ref item, _) => {
-                        self.vec_iter = item.iter();
-                        // This wont work if there is ever an empty vec.
-                        return self.vec_iter.next();
+    type Item = (Morton, &'a T);
+    fn next(&mut self) -> Option<(Morton, &'a T)> {
+        self.vec_iter
+            .next()
+            .map(|item| (self.vec_morton, item))
+            .or_else(|| {
+                while let Some((node, ix)) = self.nodes.pop() {
+                    if ix != 7 {
+                        self.nodes.push((node, ix + 1));
                     }
-                    _ => {}
+                    match node[ix] {
+                        MortonOctree::Node(ref children) => self.nodes.push((children, 0)),
+                        MortonOctree::Leaf(ref item, morton) => {
+                            self.vec_iter = item.iter();
+                            self.vec_morton = morton;
+                            // This wont work if there is ever an empty vec.
+                            return self.vec_iter.next().map(|item| (self.vec_morton, item));
+                        }
+                        _ => {}
+                    }
                 }
-            }
-            None
-        })
+                None
+            })
     }
 }
 

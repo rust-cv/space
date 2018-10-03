@@ -7,7 +7,7 @@ use derive_more as dm;
 
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized, boxes.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, dm::BitOr, dm::BitAnd, dm::Shl, dm::Shr)]
-struct Morton(u64);
+pub struct Morton(u64);
 
 const NUM_BITS_PER_DIM: usize = 64 / 3;
 const MORTON_HIGHEST_BITS: Morton = Morton(0x7000_0000_0000_0000);
