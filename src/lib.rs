@@ -4,6 +4,6 @@ mod octree;
 
 pub use self::octree::*;
 
-trait Contains<Point> {
-    fn contains(&self, point: Point) -> bool;
+trait Contains<Region> {
+    fn contains(&self, region: Region) -> bool;
 }
