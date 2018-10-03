@@ -1,4 +1,6 @@
-use super::*;
+use super::{morton::*, *};
+use nalgebra::Vector3;
+use num::{Float, FromPrimitive, ToPrimitive};
 
 use itertools::Itertools;
 
@@ -46,7 +48,8 @@ impl<T> Octree<T> {
                     MortonOctree::Leaf(_, _) => Done((node, old_ix)),
                     MortonOctree::None => Done((node, old_ix)),
                 }
-            }).into_inner();
+            })
+            .into_inner();
 
         match tree_part {
             MortonOctree::Leaf(nodes, dest_morton) => {
@@ -151,6 +154,47 @@ impl<T> MortonOctree<T> {
         }
     }
 
+    fn iter_gather<'a, F, G>(
+        &'a self,
+        mut further: F,
+        mut gatherer: G,
+    ) -> impl Iterator<Item = (MortonRegion, G::Sum)> + 'a
+    where
+        F: FnMut(MortonRegion) -> bool + 'a,
+        G: Gatherer<T> + 'a,
+    {
+        use either::Either::*;
+        let base_region = MortonRegion {
+            morton: Morton(0),
+            level: 0,
+        };
+        match self {
+            MortonOctree::Node(box ref n) => {
+                if further(base_region) {
+                    Left(MortonOctreeFurtherGatherIter::new(
+                        vec![(n, 0)],
+                        further,
+                        gatherer,
+                    ))
+                } else {
+                    Right(std::iter::once((
+                        base_region,
+                        gatherer.gather(n.iter().flat_map(|c| c.iter().map(|(_, t)| t))),
+                    )))
+                }
+            }
+            MortonOctree::Leaf(ref items, _) => Right(std::iter::once((
+                base_region,
+                gatherer.gather(items.iter()),
+            ))),
+            MortonOctree::None => Left(MortonOctreeFurtherGatherIter::new(
+                vec![],
+                further,
+                gatherer,
+            )),
+        }
+    }
+
     #[inline]
     fn empty_node() -> Self {
         use self::MortonOctree::*;
@@ -182,7 +226,9 @@ impl<'a, T> MortonOctreeIter<'a, T> {
 
 impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
     type Item = (Morton, &'a T);
-    fn next(&mut self) -> Option<(Morton, &'a T)> {
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
         self.vec_iter
             .next()
             .map(|item| (self.vec_morton, item))
@@ -207,6 +253,69 @@ impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
     }
 }
 
+struct MortonOctreeFurtherGatherIter<'a, T, F, G> {
+    nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>,
+    region: MortonRegion,
+    further: F,
+    gatherer: G,
+}
+
+impl<'a, T, F, G> MortonOctreeFurtherGatherIter<'a, T, F, G> {
+    fn new(nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>, further: F, gatherer: G) -> Self {
+        MortonOctreeFurtherGatherIter {
+            nodes,
+            region: MortonRegion {
+                morton: Morton(0),
+                level: 1,
+            },
+            further,
+            gatherer,
+        }
+    }
+}
+
+impl<'a, T, F, G> Iterator for MortonOctreeFurtherGatherIter<'a, T, F, G>
+where
+    F: FnMut(MortonRegion) -> bool,
+    G: Gatherer<T>,
+{
+    type Item = (MortonRegion, G::Sum);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((node, ix)) = self.nodes.pop() {
+            // The previous region is the one we are in.
+            let region = self.region;
+
+            // Then update the region for the next iteration.
+            self.region.exit();
+            if ix != 7 {
+                self.nodes.push((node, ix + 1));
+                self.region.enter(ix + 1);
+            }
+
+            match node[ix] {
+                MortonOctree::Node(ref children) => {
+                    if (self.further)(region) {
+                        self.nodes.push((children, 0));
+                    } else {
+                        return Some((
+                            region,
+                            self.gatherer
+                                .gather(children.iter().flat_map(|c| c.iter().map(|(_, t)| t))),
+                        ));
+                    }
+                }
+                MortonOctree::Leaf(ref items, _) => {
+                    return Some((region, self.gatherer.gather(items.iter())));
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,7 +337,8 @@ mod tests {
                 xrng.sample_iter(&Open01),
                 yrng.sample_iter(&Open01),
                 zrng.sample_iter(&Open01)
-            ).take(5000)
+            )
+            .take(5000)
             .map(|(x, y, z)| (Vector3::<f64>::new(x, y, z), 0)),
         );
 
