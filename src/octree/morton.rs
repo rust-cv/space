@@ -7,15 +7,15 @@ use derive_more as dm;
 #[derive(
     Debug, Clone, Copy, Eq, PartialEq, Hash, dm::Not, dm::BitOr, dm::BitAnd, dm::Shl, dm::Shr,
 )]
-pub struct Morton(pub(crate) u64);
+pub struct Morton<T>(pub T);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub struct MortonRegion {
-    pub(crate) morton: Morton,
-    pub(crate) level: usize,
+pub struct MortonRegion<T> {
+    pub morton: Morton<T>,
+    pub level: usize,
 }
 
-impl MortonRegion {
+impl MortonRegion<u64> {
     pub fn enter(&mut self, section: usize) {
         self.morton.set_level(self.level, section);
         self.level += 1;
@@ -27,9 +27,9 @@ impl MortonRegion {
 }
 
 pub(crate) const NUM_BITS_PER_DIM: usize = 64 / 3;
-const MORTON_HIGHEST_BITS: Morton = Morton(0x7000_0000_0000_0000);
+const MORTON_HIGHEST_BITS: Morton<u64> = Morton(0x7000_0000_0000_0000);
 
-impl Morton {
+impl Morton<u64> {
     #[inline]
     pub fn get_level(self, level: usize) -> usize {
         ((self & (MORTON_HIGHEST_BITS >> (3 * level))) >> (3 * (NUM_BITS_PER_DIM - level - 1))).0
@@ -43,12 +43,12 @@ impl Morton {
     }
 }
 
-impl<S> From<Vector3<S>> for Morton
+impl<S> From<Vector3<S>> for Morton<u64>
 where
     S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
 {
     #[inline]
-    fn from(point: Vector3<S>) -> Morton {
+    fn from(point: Vector3<S>) -> Self {
         let point = point.map(|x| {
             (x * (S::one() + S::one()).powi(NUM_BITS_PER_DIM as i32))
                 .to_u64()
@@ -58,7 +58,7 @@ where
     }
 }
 
-impl<S> Into<Vector3<S>> for Morton
+impl<S> Into<Vector3<S>> for Morton<u64>
 where
     S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
 {

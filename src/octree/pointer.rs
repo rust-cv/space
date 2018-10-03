@@ -20,7 +20,7 @@ impl<T> Octree<T> {
         }
     }
 
-    pub fn morton<S>(&self, point: &Vector3<S>) -> Morton
+    pub fn morton<S>(&self, point: &Vector3<S>) -> Morton<u64>
     where
         S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
     {
@@ -34,7 +34,7 @@ impl<T> Octree<T> {
     }
 
     /// Insert an item with a point and return the existing item if they would both occupy the same space.
-    pub fn insert(&mut self, morton: Morton, item: T) {
+    pub fn insert(&mut self, morton: Morton<u64>, item: T) {
         // Traverse the tree down to the node we need to operate on.
         let (tree_part, level) = (0..NUM_BITS_PER_DIM)
             .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
@@ -101,7 +101,7 @@ impl<T> Octree<T> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Morton, &T)> {
+    pub fn iter(&self) -> impl Iterator<Item = (Morton<u64>, &T)> {
         self.tree.iter()
     }
 }
@@ -138,12 +138,12 @@ where
 #[derive(Clone, Debug)]
 enum MortonOctree<T> {
     Node(Box<[MortonOctree<T>; 8]>),
-    Leaf(Vec<T>, Morton),
+    Leaf(Vec<T>, Morton<u64>),
     None,
 }
 
 impl<T> MortonOctree<T> {
-    fn iter(&self) -> impl Iterator<Item = (Morton, &T)> {
+    fn iter(&self) -> impl Iterator<Item = (Morton<u64>, &T)> {
         use either::Either::*;
         match self {
             MortonOctree::Node(box ref n) => Left(MortonOctreeIter::new(vec![(n, 0)])),
@@ -158,9 +158,9 @@ impl<T> MortonOctree<T> {
         &'a self,
         mut further: F,
         mut gatherer: G,
-    ) -> impl Iterator<Item = (MortonRegion, G::Sum)> + 'a
+    ) -> impl Iterator<Item = (MortonRegion<u64>, G::Sum)> + 'a
     where
-        F: FnMut(MortonRegion) -> bool + 'a,
+        F: FnMut(MortonRegion<u64>) -> bool + 'a,
         G: Gatherer<T> + 'a,
     {
         use either::Either::*;
@@ -211,7 +211,7 @@ impl<T> Default for MortonOctree<T> {
 struct MortonOctreeIter<'a, T> {
     nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>,
     vec_iter: std::slice::Iter<'a, T>,
-    vec_morton: Morton,
+    vec_morton: Morton<u64>,
 }
 
 impl<'a, T> MortonOctreeIter<'a, T> {
@@ -225,7 +225,7 @@ impl<'a, T> MortonOctreeIter<'a, T> {
 }
 
 impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
-    type Item = (Morton, &'a T);
+    type Item = (Morton<u64>, &'a T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -255,7 +255,7 @@ impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
 
 struct MortonOctreeFurtherGatherIter<'a, T, F, G> {
     nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>,
-    region: MortonRegion,
+    region: MortonRegion<u64>,
     further: F,
     gatherer: G,
 }
@@ -276,10 +276,10 @@ impl<'a, T, F, G> MortonOctreeFurtherGatherIter<'a, T, F, G> {
 
 impl<'a, T, F, G> Iterator for MortonOctreeFurtherGatherIter<'a, T, F, G>
 where
-    F: FnMut(MortonRegion) -> bool,
+    F: FnMut(MortonRegion<u64>) -> bool,
     G: Gatherer<T>,
 {
-    type Item = (MortonRegion, G::Sum);
+    type Item = (MortonRegion<u64>, G::Sum);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
