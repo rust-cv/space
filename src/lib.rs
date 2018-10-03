@@ -4,6 +4,9 @@ mod octree;
 
 pub use self::octree::*;
 
+pub struct CartesianRegion<T>(pub T, pub T);
+
 trait Contains<Region> {
-    fn contains(&self, region: Region) -> bool;
+    type Iter;
+    fn contains(&self, region: Region) -> Self::Iter;
 }
