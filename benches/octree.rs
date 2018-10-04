@@ -7,9 +7,12 @@ use rand::distributions::Open01;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-fn test_octree_insertion<'a, I: IntoIterator<Item = (&'a Vector3<f64>, i32)>>(vecs: I) {
+fn octree_insertion<'a, I: IntoIterator<Item = (&'a Vector3<f64>, i32)>>(
+    vecs: I,
+) -> space::pointer::Octree<i32> {
     let mut octree = space::pointer::Octree::new(0);
     octree.extend(vecs);
+    octree
 }
 
 fn random_points(num: usize) -> Vec<Vector3<f64>> {
@@ -21,7 +24,8 @@ fn random_points(num: usize) -> Vec<Vector3<f64>> {
         xrng.sample_iter(&Open01),
         yrng.sample_iter(&Open01),
         zrng.sample_iter(&Open01)
-    ).take(num)
+    )
+    .take(num)
     .map(|(x, y, z)| Vector3::new(x, y, z))
     .collect()
 }
@@ -33,10 +37,16 @@ fn criterion_benchmark(c: &mut Criterion) {
             "insertion",
             |b, &n| {
                 let points = random_points(n);
-                b.iter(move || test_octree_insertion(points.iter().map(|v| (v, 0))))
+                b.iter(move || octree_insertion(points.iter().map(|v| (v, 0))))
             },
             (10..39).map(|n| 1.5f64.powi(n) as usize),
-        ).sample_size(5)
+        )
+        .with_function("iteration", |b, &n| {
+            let points = random_points(n);
+            let octree = octree_insertion(points.iter().map(|v| (v, 0)));
+            b.iter(move || assert_eq!(octree.iter().count(), n))
+        })
+        .sample_size(5)
         .warm_up_time(std::time::Duration::from_millis(1000))
         .measurement_time(std::time::Duration::from_millis(5000)),
     );
