@@ -105,7 +105,7 @@ impl<T> Octree<T> {
         self.tree.iter()
     }
 
-    fn iter_gather<'a, F, G>(
+    pub fn iter_gather<'a, F, G>(
         &'a self,
         further: F,
         gatherer: G,
@@ -191,13 +191,13 @@ impl<T> MortonOctree<T> {
                 } else {
                     Right(std::iter::once((
                         base_region,
-                        gatherer.gather(n.iter().flat_map(|c| c.iter().map(|(_, t)| t))),
+                        gatherer.gather(n.iter().flat_map(|c| c.iter())),
                     )))
                 }
             }
-            MortonOctree::Leaf(ref items, _) => Right(std::iter::once((
+            MortonOctree::Leaf(ref items, morton) => Right(std::iter::once((
                 base_region,
-                gatherer.gather(items.iter()),
+                gatherer.gather(items.iter().map(|i| (*morton, i))),
             ))),
             MortonOctree::None => Left(MortonOctreeFurtherGatherIter::new(
                 vec![],
@@ -310,16 +310,19 @@ where
                 MortonOctree::Node(ref children) => {
                     if (self.further)(region) {
                         self.nodes.push((children, 0));
+                        self.region.enter(0);
                     } else {
                         return Some((
                             region,
-                            self.gatherer
-                                .gather(children.iter().flat_map(|c| c.iter().map(|(_, t)| t))),
+                            self.gatherer.gather(children.iter().flat_map(|c| c.iter())),
                         ));
                     }
                 }
-                MortonOctree::Leaf(ref items, _) => {
-                    return Some((region, self.gatherer.gather(items.iter())));
+                MortonOctree::Leaf(ref items, morton) => {
+                    return Some((
+                        region,
+                        self.gatherer.gather(items.iter().map(|i| (morton, i))),
+                    ));
                 }
                 _ => {}
             }
