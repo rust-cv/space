@@ -104,6 +104,18 @@ impl<T> Octree<T> {
     pub fn iter(&self) -> impl Iterator<Item = (Morton<u64>, &T)> {
         self.tree.iter()
     }
+
+    fn iter_gather<'a, F, G>(
+        &'a self,
+        further: F,
+        gatherer: G,
+    ) -> impl Iterator<Item = (MortonRegion<u64>, G::Sum)> + 'a
+    where
+        F: FnMut(MortonRegion<u64>) -> bool + 'a,
+        G: Gatherer<T> + 'a,
+    {
+        self.tree.iter_gather(further, gatherer)
+    }
 }
 
 impl<T, S> Extend<(Vector3<S>, T)> for Octree<T>
