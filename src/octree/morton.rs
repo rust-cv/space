@@ -67,6 +67,7 @@ where
 
 pub(crate) const NUM_BITS_PER_DIM: usize = 64 / 3;
 const MORTON_HIGHEST_BITS: Morton<u64> = Morton(0x7000_0000_0000_0000);
+const MORTON_UNUSED_BIT: Morton<u64> = Morton(0x8000_0000_0000_0000);
 
 impl Morton<u64> {
     #[inline]
@@ -92,7 +93,7 @@ where
                 .to_u64()
                 .unwrap()
         });
-        Morton(morton::encode_3d(point.x, point.y, point.z))
+        Morton(morton::encode_3d(point.x, point.y, point.z)) & !MORTON_UNUSED_BIT
     }
 }
 
