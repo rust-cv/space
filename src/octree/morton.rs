@@ -17,13 +17,32 @@ pub struct MortonRegion<T> {
 }
 
 impl MortonRegion<u64> {
-    pub fn enter(&mut self, section: usize) {
+    pub(crate) fn enter(mut self, section: usize) -> Self {
         self.morton.set_level(self.level, section);
         self.level += 1;
+        self
     }
 
-    pub fn exit(&mut self) {
+    pub(crate) fn exit(&mut self) -> usize {
         self.level -= 1;
+        self.morton.get_level(self.level)
+    }
+
+    pub(crate) fn get(&self) -> usize {
+        self.morton.get_level(self.level - 1)
+    }
+
+    pub(crate) fn next(mut self) -> Option<Self> {
+        if self.level == 0 {
+            None
+        } else {
+            let last = self.exit();
+            if last == 7 {
+                None
+            } else {
+                Some(self.enter(last + 1))
+            }
+        }
     }
 }
 

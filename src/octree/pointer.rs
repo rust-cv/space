@@ -184,7 +184,7 @@ impl<T> MortonOctree<T> {
             MortonOctree::Node(box ref n) => {
                 if further(base_region) {
                     Left(MortonOctreeFurtherGatherIter::new(
-                        vec![(n, 0)],
+                        vec![(n, base_region.enter(0))],
                         further,
                         gatherer,
                     ))
@@ -266,20 +266,19 @@ impl<'a, T> Iterator for MortonOctreeIter<'a, T> {
 }
 
 struct MortonOctreeFurtherGatherIter<'a, T, F, G> {
-    nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>,
-    region: MortonRegion<u64>,
+    nodes: Vec<(&'a [MortonOctree<T>; 8], MortonRegion<u64>)>,
     further: F,
     gatherer: G,
 }
 
 impl<'a, T, F, G> MortonOctreeFurtherGatherIter<'a, T, F, G> {
-    fn new(nodes: Vec<(&'a [MortonOctree<T>; 8], usize)>, further: F, gatherer: G) -> Self {
+    fn new(
+        nodes: Vec<(&'a [MortonOctree<T>; 8], MortonRegion<u64>)>,
+        further: F,
+        gatherer: G,
+    ) -> Self {
         MortonOctreeFurtherGatherIter {
             nodes,
-            region: MortonRegion {
-                morton: Morton(0),
-                level: 1,
-            },
             further,
             gatherer,
         }
@@ -295,22 +294,16 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((node, ix)) = self.nodes.pop() {
-            // The previous region is the one we are in.
-            let region = self.region;
-
+        while let Some((node, region)) = self.nodes.pop() {
             // Then update the region for the next iteration.
-            self.region.exit();
-            if ix != 7 {
-                self.nodes.push((node, ix + 1));
-                self.region.enter(ix + 1);
+            if let Some(next) = region.next() {
+                self.nodes.push((node, next));
             }
 
-            match node[ix] {
+            match node[region.get()] {
                 MortonOctree::Node(ref children) => {
                     if (self.further)(region) {
-                        self.nodes.push((children, 0));
-                        self.region.enter(0);
+                        self.nodes.push((children, region.enter(0)));
                     } else {
                         return Some((
                             region,
