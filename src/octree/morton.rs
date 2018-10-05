@@ -1,6 +1,7 @@
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
+use bitwise::morton;
 use derive_more as dm;
 
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized, boxes.
@@ -34,9 +35,7 @@ where
     fn into(self) -> Vector3<S> {
         let Morton(v) = self.morton;
         let cut = NUM_BITS_PER_DIM - self.level;
-        let x = gather_by_3(v >> (0 + 3 * cut));
-        let y = gather_by_3(v >> (1 + 3 * cut));
-        let z = gather_by_3(v >> (2 + 3 * cut));
+        let (x, y, z) = morton::decode_3d(v >> (3 * cut));
         let scale = (S::one() + S::one()).powi(-(self.level as i32));
 
         Vector3::new(
@@ -74,7 +73,7 @@ where
                 .to_u64()
                 .unwrap()
         });
-        Morton(split_by_3(point.x) << 0 | split_by_3(point.y) << 1 | split_by_3(point.z) << 2)
+        Morton(morton::encode_3d(point.x, point.y, point.z))
     }
 }
 
@@ -85,9 +84,7 @@ where
     #[inline]
     fn into(self) -> Vector3<S> {
         let Morton(v) = self;
-        let x = gather_by_3(v >> 0);
-        let y = gather_by_3(v >> 1);
-        let z = gather_by_3(v >> 2);
+        let (x, y, z) = morton::decode_3d(v);
         let scale = (S::one() + S::one()).powi(-(NUM_BITS_PER_DIM as i32));
 
         Vector3::new(
@@ -96,32 +93,4 @@ where
             (S::from_u64(z).unwrap() + S::from_f32(0.5).unwrap()) * scale,
         )
     }
-}
-
-/// This allows the lower bits to be spread into every third bit.
-///
-/// This derives from https://www.forceflow.be/2013/10/07/morton-encodingdecoding-through-bit-interleaving-implementations/
-#[inline]
-fn split_by_3(x: u64) -> u64 {
-    let x = x & 0x1fffff;
-    let x = (x | x << 32) & 0x1f00000000ffff;
-    let x = (x | x << 16) & 0x1f0000ff0000ff;
-    let x = (x | x << 8) & 0x100f00f00f00f00f;
-    let x = (x | x << 4) & 0x10c30c30c30c30c3;
-    let x = (x | x << 2) & 0x1249249249249249;
-    x
-}
-
-/// This allows every third bit to be gathered into the lowest bits.
-///
-/// This derives from https://stackoverflow.com/a/28358035
-#[inline]
-fn gather_by_3(x: u64) -> u64 {
-    let x = x & 0x1249249249249249;
-    let x = (x | (x >> 2)) & 0x10c30c30c30c30c3;
-    let x = (x | (x >> 4)) & 0x100f00f00f00f00f;
-    let x = (x | (x >> 8)) & 0x1f0000ff0000ff;
-    let x = (x | (x >> 16)) & 0x1f00000000ffff;
-    let x = (x | (x >> 32)) & 0x1fffff;
-    x
 }
