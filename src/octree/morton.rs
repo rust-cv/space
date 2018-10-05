@@ -6,32 +6,50 @@ use derive_more as dm;
 
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized, boxes.
 #[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Hash, dm::Not, dm::BitOr, dm::BitAnd, dm::Shl, dm::Shr,
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    dm::Not,
+    dm::BitOr,
+    dm::BitAnd,
+    dm::Shl,
+    dm::Shr,
 )]
 pub struct Morton<T>(pub T);
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct MortonRegion<T> {
     pub morton: Morton<T>,
     pub level: usize,
 }
 
 impl MortonRegion<u64> {
+    #[inline]
     pub(crate) fn enter(mut self, section: usize) -> Self {
         self.morton.set_level(self.level, section);
         self.level += 1;
         self
     }
 
+    #[inline]
     pub(crate) fn exit(&mut self) -> usize {
         self.level -= 1;
-        self.morton.get_level(self.level)
+        let old = self.morton.get_level(self.level);
+        self.morton.reset_level(self.level);
+        old
     }
 
+    #[inline]
     pub(crate) fn get(&self) -> usize {
         self.morton.get_level(self.level - 1)
     }
 
+    #[inline]
     pub(crate) fn next(mut self) -> Option<Self> {
         if self.level == 0 {
             None
@@ -79,6 +97,11 @@ impl Morton<u64> {
     pub fn set_level(&mut self, level: usize, val: usize) {
         *self = (*self & !(MORTON_HIGHEST_BITS >> (3 * level)))
             | Morton((val as u64) << (3 * (NUM_BITS_PER_DIM - level - 1)))
+    }
+
+    #[inline]
+    pub fn reset_level(&mut self, level: usize) {
+        *self = *self & !(MORTON_HIGHEST_BITS >> (3 * level))
     }
 }
 
