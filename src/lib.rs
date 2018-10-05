@@ -1,8 +1,6 @@
 #![feature(box_syntax, box_patterns)]
 
-mod octree;
-
-pub use self::octree::*;
+pub mod octree;
 
 pub struct CartesianRegion<T>(pub T, pub T);
 

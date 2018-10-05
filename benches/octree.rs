@@ -7,10 +7,12 @@ use rand::distributions::Open01;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
+use space::octree;
+
 fn octree_insertion<'a, I: IntoIterator<Item = (&'a Vector3<f64>, i32)>>(
     vecs: I,
-) -> space::pointer::Octree<i32> {
-    let mut octree = space::pointer::Octree::new(0);
+) -> octree::pointer::Plain<i32> {
+    let mut octree = octree::pointer::Plain::new(0);
     octree.extend(vecs);
     octree
 }
