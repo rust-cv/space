@@ -3,6 +3,7 @@ use crate::octree::*;
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
+use int_hash::IntHashMap;
 use itertools::Itertools;
 
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
@@ -117,6 +118,19 @@ impl<T> Plain<T> {
     {
         self.tree.iter_gather(further, gatherer)
     }
+
+    pub fn iter_gather_cached<'a, F, G>(
+        &'a self,
+        further: F,
+        gatherer: G,
+        cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+    ) -> impl Iterator<Item = (MortonRegion<u64>, &'a mut G::Sum)> + 'a
+    where
+        F: FnMut(MortonRegion<u64>) -> bool + 'a,
+        G: Gatherer<T> + 'a,
+    {
+        self.tree.iter_gather_cached(further, gatherer, cache)
+    }
 }
 
 impl<T, S> Extend<(Vector3<S>, T)> for Plain<T>
@@ -170,7 +184,7 @@ impl<T> MortonOctree<T> {
     fn iter_gather<'a, F, G>(
         &'a self,
         mut further: F,
-        mut gatherer: G,
+        gatherer: G,
     ) -> impl Iterator<Item = (MortonRegion<u64>, G::Sum)> + 'a
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
@@ -204,6 +218,54 @@ impl<T> MortonOctree<T> {
                 vec![],
                 further,
                 gatherer,
+            )),
+        }
+    }
+
+    fn iter_gather_cached<'a, F, G>(
+        &'a self,
+        mut further: F,
+        gatherer: G,
+        cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+    ) -> impl Iterator<Item = (MortonRegion<u64>, &'a mut G::Sum)> + 'a
+    where
+        F: FnMut(MortonRegion<u64>) -> bool + 'a,
+        G: Gatherer<T> + 'a,
+    {
+        use either::Either::*;
+        let base_region = MortonRegion {
+            morton: Morton(0),
+            level: 0,
+        };
+        match self {
+            MortonOctree::Node(box ref n) => {
+                if further(base_region) {
+                    Left(MortonOctreeFurtherGatherCacheIter::new(
+                        vec![(n, base_region.enter(0))],
+                        further,
+                        gatherer,
+                        cache,
+                    ))
+                } else {
+                    Right(std::iter::once((
+                        base_region,
+                        cache
+                            .entry(base_region)
+                            .or_insert_with(|| gatherer.gather(n.iter().flat_map(|c| c.iter()))),
+                    )))
+                }
+            }
+            MortonOctree::Leaf(ref items, morton) => Right(std::iter::once((
+                base_region,
+                cache
+                    .entry(base_region)
+                    .or_insert_with(|| gatherer.gather(items.iter().map(|i| (*morton, i)))),
+            ))),
+            MortonOctree::None => Left(MortonOctreeFurtherGatherCacheIter::new(
+                vec![],
+                further,
+                gatherer,
+                cache,
             )),
         }
     }
@@ -316,6 +378,78 @@ where
                     return Some((
                         region,
                         self.gatherer.gather(items.iter().map(|i| (morton, i))),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+}
+
+struct MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
+where
+    G: Gatherer<T>,
+{
+    nodes: Vec<(&'a [MortonOctree<T>; 8], MortonRegion<u64>)>,
+    further: F,
+    gatherer: G,
+    cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+}
+
+impl<'a, T, F, G> MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
+where
+    G: Gatherer<T>,
+{
+    fn new(
+        nodes: Vec<(&'a [MortonOctree<T>; 8], MortonRegion<u64>)>,
+        further: F,
+        gatherer: G,
+        cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+    ) -> Self {
+        MortonOctreeFurtherGatherCacheIter {
+            nodes,
+            further,
+            gatherer,
+            cache,
+        }
+    }
+}
+
+impl<'a, T, F, G> Iterator for MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
+where
+    F: FnMut(MortonRegion<u64>) -> bool,
+    G: Gatherer<T>,
+{
+    type Item = (MortonRegion<u64>, &'a mut G::Sum);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((node, region)) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push((node, next));
+            }
+
+            match node[region.get()] {
+                MortonOctree::Node(ref children) => {
+                    if (self.further)(region) {
+                        self.nodes.push((children, region.enter(0)));
+                    } else {
+                        return Some((
+                            region,
+                            self.cache.entry(region).or_insert_with(|| {
+                                self.gatherer.gather(children.iter().flat_map(|c| c.iter()))
+                            }),
+                        ));
+                    }
+                }
+                MortonOctree::Leaf(ref items, morton) => {
+                    return Some((
+                        region,
+                        self.cache.entry(region).or_insert_with(|| {
+                            self.gatherer.gather(items.iter().map(|i| (morton, i)))
+                        }),
                     ));
                 }
                 _ => {}
