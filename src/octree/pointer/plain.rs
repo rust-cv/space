@@ -6,6 +6,12 @@ use num::{Float, FromPrimitive, ToPrimitive};
 use int_hash::IntHashMap;
 use itertools::Itertools;
 
+#[allow(type_alias_bounds)]
+type CacheGatherIter<'a, T, F, G: Gatherer<T>> = either::Either<
+    MortonOctreeFurtherGatherCacheIter<'a, T, F, G>,
+    std::iter::Once<(MortonRegion<u64>, &'a mut G::Sum)>,
+>;
+
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 pub struct Plain<T> {
     tree: MortonOctree<T>,
@@ -18,7 +24,7 @@ impl<T> Plain<T> {
     pub fn new(level: i32) -> Self {
         Plain {
             tree: MortonOctree::default(),
-            level: level,
+            level,
         }
     }
 
@@ -124,7 +130,7 @@ impl<T> Plain<T> {
         further: F,
         gatherer: G,
         cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
-    ) -> impl Iterator<Item = (MortonRegion<u64>, &'a mut G::Sum)> + 'a
+    ) -> CacheGatherIter<'a, T, F, G>
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
         G: Gatherer<T> + 'a,
@@ -227,7 +233,7 @@ impl<T> MortonOctree<T> {
         mut further: F,
         gatherer: G,
         cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
-    ) -> impl Iterator<Item = (MortonRegion<u64>, &'a mut G::Sum)> + 'a
+    ) -> CacheGatherIter<'a, T, F, G>
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
         G: Gatherer<T> + 'a,
@@ -387,7 +393,7 @@ where
     }
 }
 
-struct MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
+pub struct MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
 where
     G: Gatherer<T>,
 {
@@ -416,7 +422,12 @@ where
     }
 }
 
-impl<'a, T, F, G> Iterator for MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
+/// The reason `Iterator` is only implemented for `&'a mut` is because the returned reference cannot live beyond
+/// the next call to `next()`. If it does, then the cache the iterator is borrowing could potentially reallocate
+/// and cause a use-after-free. Some unsafe code exists in this implementation that assumes this soundness.
+/// This implementation cannot be written soundly in a way that allows multiple items from `next()` to
+/// exist simultaneously without changing the method of caching.
+impl<'a, T, F, G> Iterator for &'a mut MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
 where
     F: FnMut(MortonRegion<u64>) -> bool,
     G: Gatherer<T>,
@@ -431,6 +442,12 @@ where
                 self.nodes.push((node, next));
             }
 
+            // NOTE: This unsafe code is thought to be sound. By making the lifetime of the returned
+            // G::Sum tied to the iterator, it is thought that the cache it is in cannot be mutated and
+            // cause a potential data race.
+            let cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum> =
+                unsafe { &mut *(self.cache as *mut _) };
+
             match node[region.get()] {
                 MortonOctree::Node(ref children) => {
                     if (self.further)(region) {
@@ -438,7 +455,7 @@ where
                     } else {
                         return Some((
                             region,
-                            self.cache.entry(region).or_insert_with(|| {
+                            cache.entry(region).or_insert_with(|| {
                                 self.gatherer.gather(children.iter().flat_map(|c| c.iter()))
                             }),
                         ));
@@ -447,7 +464,7 @@ where
                 MortonOctree::Leaf(ref items, morton) => {
                     return Some((
                         region,
-                        self.cache.entry(region).or_insert_with(|| {
+                        cache.entry(region).or_insert_with(|| {
                             self.gatherer.gather(items.iter().map(|i| (morton, i)))
                         }),
                     ));

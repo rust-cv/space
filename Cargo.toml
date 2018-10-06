@@ -12,6 +12,7 @@ itertools = "0.7.8"
 either = "1.5.0"
 bitwise = "0.1.1"
 int_hash = "0.1.1"
+streaming-iterator = "0.1.4"
 
 [dev-dependencies]
 rand = "0.5.5"
