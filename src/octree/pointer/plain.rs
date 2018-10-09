@@ -3,7 +3,6 @@ use crate::octree::*;
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
-use int_hash::IntHashMap;
 use itertools::Itertools;
 
 #[allow(type_alias_bounds)]
@@ -129,13 +128,69 @@ impl<T> Plain<T> {
         &'a self,
         further: F,
         gatherer: G,
-        cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+        cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum>,
     ) -> CacheGatherIter<'a, T, F, G>
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
         G: Gatherer<T> + 'a,
     {
         self.tree.iter_gather_cached(further, gatherer, cache)
+    }
+
+    /// This gathers the tree into a linear hashed octree map.
+    pub fn iter_gather_deep_linear_hashed<'a, F, G>(
+        &'a self,
+        gatherer: G,
+        cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum>,
+    ) -> PassthroughMap<MortonRegion<u64>, G::Sum>
+    where
+        F: FnMut(MortonRegion<u64>) -> bool + 'a,
+        G: Gatherer<T> + 'a,
+    {
+        // First insert the top level node.
+        cache
+            .entry(MortonRegion {
+                morton: Morton(0),
+                level: 0,
+            })
+            .or_insert_with(|| gatherer.gather(n.iter().flat_map(|c| c.iter())));
+        let mut nodes = Vec::new();
+        while let Some((node, region)) = nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push((node, next));
+            }
+
+            // NOTE: This unsafe code is thought to be sound. By making the lifetime of the returned
+            // G::Sum tied to the iterator, it is thought that the cache it is in cannot be mutated and
+            // cause a potential data race.
+            let cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum> =
+                unsafe { &mut *(self.cache as *mut _) };
+
+            match node[region.get()] {
+                MortonOctree::Node(ref children) => {
+                    if (self.further)(region) {
+                        self.nodes.push((children, region.enter(0)));
+                    } else {
+                        return Some((
+                            region,
+                            cache.entry(region).or_insert_with(|| {
+                                self.gatherer.gather(children.iter().flat_map(|c| c.iter()))
+                            }),
+                        ));
+                    }
+                }
+                MortonOctree::Leaf(ref items, morton) => {
+                    return Some((
+                        region,
+                        cache.entry(region).or_insert_with(|| {
+                            self.gatherer.gather(items.iter().map(|i| (morton, i)))
+                        }),
+                    ));
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -232,7 +287,7 @@ impl<T> MortonOctree<T> {
         &'a self,
         mut further: F,
         gatherer: G,
-        cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+        cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum>,
     ) -> CacheGatherIter<'a, T, F, G>
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
@@ -274,6 +329,64 @@ impl<T> MortonOctree<T> {
                 cache,
             )),
         }
+    }
+
+    /// This gathers the tree into a linear hashed octree map.
+    pub fn iter_gather_deep_linear_hashed<'a, F, G>(
+        &'a self,
+        gatherer: G,
+    ) -> PassthroughMap<MortonRegion<u64>, G::Sum>
+    where
+        F: FnMut(MortonRegion<u64>) -> bool + 'a,
+        G: Gatherer<T> + 'a,
+    {
+        let mut map = PassthroughMap::default();
+        let base_region = MortonRegion {
+            morton: Morton(0),
+            level: 0,
+        };
+        let mut nodes = Vec::new();
+        match self {
+            MortonOctree::Node(box ref n) => {
+                map.insert(
+                    base_region,
+                    gatherer.gather(n.iter().flat_map(|c| c.iter())),
+                );
+
+                nodes.push((n, base_region.enter(0)));
+            }
+            MortonOctree::Leaf(ref items, morton) => {
+                map.insert(
+                    base_region,
+                    gatherer.gather(items.iter().map(|i| (*morton, i))),
+                );
+            }
+            _ => {}
+        }
+
+        while let Some((node, region)) = nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                nodes.push((node, next));
+            }
+
+            match node[region.get()] {
+                MortonOctree::Node(ref children) => {
+                    map.insert(
+                        region,
+                        gatherer.gather(children.iter().flat_map(|c| c.iter())),
+                    );
+
+                    nodes.push((children, region.enter(0)));
+                }
+                MortonOctree::Leaf(ref items, morton) => {
+                    map.insert(region, gatherer.gather(items.iter().map(|i| (morton, i))));
+                }
+                _ => {}
+            }
+        }
+
+        map
     }
 
     #[inline]
@@ -400,7 +513,7 @@ where
     nodes: Vec<(&'a [MortonOctree<T>; 8], MortonRegion<u64>)>,
     further: F,
     gatherer: G,
-    cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+    cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum>,
 }
 
 impl<'a, T, F, G> MortonOctreeFurtherGatherCacheIter<'a, T, F, G>
@@ -411,7 +524,7 @@ where
         nodes: Vec<(&'a [MortonOctree<T>; 8], MortonRegion<u64>)>,
         further: F,
         gatherer: G,
-        cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum>,
+        cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum>,
     ) -> Self {
         MortonOctreeFurtherGatherCacheIter {
             nodes,
@@ -445,7 +558,7 @@ where
             // NOTE: This unsafe code is thought to be sound. By making the lifetime of the returned
             // G::Sum tied to the iterator, it is thought that the cache it is in cannot be mutated and
             // cause a potential data race.
-            let cache: &'a mut IntHashMap<MortonRegion<u64>, G::Sum> =
+            let cache: &'a mut PassthroughMap<MortonRegion<u64>, G::Sum> =
                 unsafe { &mut *(self.cache as *mut _) };
 
             match node[region.get()] {
