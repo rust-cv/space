@@ -152,6 +152,103 @@ impl<'a, T> Iterator for MortonRegionIterator<'a, T> {
     }
 }
 
+pub struct MortonRegionFurtherIterator<'a, T, F> {
+    nodes: Vec<MortonRegion<u64>>,
+    further: F,
+    map: &'a MortonMap<T>,
+}
+
+impl<'a, T, F> MortonRegionFurtherIterator<'a, T, F>
+where
+    F: FnMut(MortonRegion<u64>) -> bool,
+{
+    /// Takes a region to iterate over the regions within it and a limit for the depth level.
+    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
+    pub fn new(region: MortonRegion<u64>, further: F, map: &'a MortonMap<T>) -> Self {
+        MortonRegionFurtherIterator {
+            nodes: vec![region],
+            further,
+            map,
+        }
+    }
+}
+
+impl<'a, T, F> Iterator for MortonRegionFurtherIterator<'a, T, F>
+where
+    F: FnMut(MortonRegion<u64>) -> bool,
+{
+    type Item = (MortonRegion<u64>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(region) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Now try to retrieve this region from the map.
+            if let Some(item) = self.map.get(&region) {
+                // It worked, so we need to descend into this region further.
+                // Only do this so long as the level wouldn't exceed the limit.
+                if (self.further)(region) {
+                    self.nodes.push(region.enter(0));
+                }
+                return Some((region, item));
+            }
+        }
+        None
+    }
+}
+
+pub struct MortonRegionFurtherLeavesIterator<'a, T, F> {
+    nodes: Vec<MortonRegion<u64>>,
+    further: F,
+    map: &'a MortonMap<T>,
+}
+
+impl<'a, T, F> MortonRegionFurtherLeavesIterator<'a, T, F>
+where
+    F: FnMut(MortonRegion<u64>) -> bool,
+{
+    /// Takes a region to iterate over the regions within it and a limit for the depth level.
+    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
+    pub fn new(region: MortonRegion<u64>, further: F, map: &'a MortonMap<T>) -> Self {
+        MortonRegionFurtherLeavesIterator {
+            nodes: vec![region],
+            further,
+            map,
+        }
+    }
+}
+
+impl<'a, T, F> Iterator for MortonRegionFurtherLeavesIterator<'a, T, F>
+where
+    F: FnMut(MortonRegion<u64>) -> bool,
+{
+    type Item = (MortonRegion<u64>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(region) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Now try to retrieve this region from the map.
+            if let Some(item) = self.map.get(&region) {
+                // It worked, so we need to descend into this region further.
+                // Only do this so long as the level wouldn't exceed the limit.
+                if (self.further)(region) {
+                    self.nodes.push(region.enter(0));
+                } else {
+                    return Some((region, item));
+                }
+            }
+        }
+        None
+    }
+}
+
 pub(crate) const NUM_BITS_PER_DIM: usize = 64 / 3;
 const MORTON_HIGHEST_BITS: Morton<u64> = Morton(0x7000_0000_0000_0000);
 const MORTON_UNUSED_BIT: Morton<u64> = Morton(0x8000_0000_0000_0000);
@@ -213,6 +310,7 @@ where
 }
 
 pub type MortonMap<T> = std::collections::HashMap<MortonRegion<u64>, T, PassthroughBuildHasher>;
+pub type MortonSet = std::collections::HashSet<MortonRegion<u64>, PassthroughBuildHasher>;
 
 pub type PassthroughBuildHasher = std::hash::BuildHasherDefault<PassthroughHash>;
 
