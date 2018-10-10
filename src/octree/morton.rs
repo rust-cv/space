@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
-use bitwise::morton;
+use bitwise::{morton, Word};
 use derive_more as dm;
 
 use std::hash::{Hash, Hasher};
@@ -71,6 +71,18 @@ impl MortonRegion<u64> {
     }
 }
 
+impl<T> Default for MortonRegion<T>
+where
+    T: Word,
+{
+    fn default() -> Self {
+        MortonRegion {
+            morton: Morton(T::zero()),
+            level: 0,
+        }
+    }
+}
+
 impl Hash for MortonRegion<u64> {
     fn hash<H>(&self, state: &mut H)
     where
@@ -96,6 +108,47 @@ where
             (S::from_u64(y).unwrap() + S::from_f32(0.5).unwrap()) * scale,
             (S::from_u64(z).unwrap() + S::from_f32(0.5).unwrap()) * scale,
         )
+    }
+}
+
+pub struct MortonRegionIterator<'a, T> {
+    nodes: Vec<MortonRegion<u64>>,
+    limit: usize,
+    map: &'a MortonMap<T>,
+}
+
+impl<'a, T> MortonRegionIterator<'a, T> {
+    /// Takes a region to iterate over the regions within it and a limit for the depth level.
+    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
+    pub fn new(region: MortonRegion<u64>, limit: usize, map: &'a MortonMap<T>) -> Self {
+        // Enough capacity for all the regions.
+        let mut nodes = Vec::with_capacity(limit);
+        nodes.push(region);
+        MortonRegionIterator { nodes, limit, map }
+    }
+}
+
+impl<'a, T> Iterator for MortonRegionIterator<'a, T> {
+    type Item = (MortonRegion<u64>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(region) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Now try to retrieve this region from the map.
+            if let Some(item) = self.map.get(&region) {
+                // It worked, so we need to descend into this region further.
+                // Only do this so long as the level wouldn't exceed the limit.
+                if region.level < self.limit {
+                    self.nodes.push(region.enter(0));
+                }
+                return Some((region, item));
+            }
+        }
+        None
     }
 }
 
@@ -159,7 +212,7 @@ where
     }
 }
 
-pub type PassthroughMap<K, V> = std::collections::HashMap<K, V, PassthroughBuildHasher>;
+pub type MortonMap<T> = std::collections::HashMap<MortonRegion<u64>, T, PassthroughBuildHasher>;
 
 pub type PassthroughBuildHasher = std::hash::BuildHasherDefault<PassthroughHash>;
 
@@ -169,6 +222,7 @@ pub struct PassthroughHash {
     value: u64,
 }
 
+#[allow(clippy::cast_lossless)]
 impl Hasher for PassthroughHash {
     #[inline]
     fn finish(&self) -> u64 {
