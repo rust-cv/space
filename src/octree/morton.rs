@@ -238,7 +238,7 @@ where
             if let Some(item) = self.map.get(&region) {
                 // It worked, so we need to descend into this region further.
                 // Only do this so long as the level wouldn't exceed the limit.
-                if (self.further)(region) {
+                if (self.further)(region) && region.level < NUM_BITS_PER_DIM - 1 {
                     self.nodes.push(region.enter(0));
                 } else {
                     return Some((region, item));

@@ -325,7 +325,9 @@ impl<T> MortonOctree<T> {
                         gatherer.gather(children.iter().flat_map(|c| c.iter())),
                     );
 
-                    nodes.push((children, region.enter(0)));
+                    if region.level < NUM_BITS_PER_DIM - 1 {
+                        nodes.push((children, region.enter(0)));
+                    }
                 }
                 MortonOctree::Leaf(ref items, morton) => {
                     map.insert(region, gatherer.gather(items.iter().map(|i| (morton, i))));
