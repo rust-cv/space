@@ -11,8 +11,8 @@ use space::octree;
 
 fn octree_insertion<'a, I: IntoIterator<Item = (&'a Vector3<f64>, i32)>>(
     vecs: I,
-) -> octree::pointer::Plain<i32> {
-    let mut octree = octree::pointer::Plain::new(0);
+) -> octree::pointer::Plain<i32, u128> {
+    let mut octree = octree::pointer::Plain::<_, u128>::new(0);
     octree.extend(vecs);
     octree
 }

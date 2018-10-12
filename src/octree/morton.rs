@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
-use bitwise::{morton, Word};
+use bitwise::morton;
 use derive_more as dm;
 
 use std::hash::{Hash, Hasher};
@@ -9,6 +9,7 @@ use std::hash::{Hash, Hasher};
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized, boxes.
 #[derive(
     Debug,
+    Default,
     Clone,
     Copy,
     Eq,
@@ -71,13 +72,60 @@ impl MortonRegion<u64> {
     }
 }
 
-impl<T> Default for MortonRegion<T>
-where
-    T: Word,
-{
+impl MortonRegion<u128> {
+    #[inline]
+    pub fn significant_bits(self) -> u128 {
+        self.morton.get_significant_bits(self.level)
+    }
+
+    #[inline]
+    pub(crate) fn enter(mut self, section: usize) -> Self {
+        self.morton.set_level(self.level, section);
+        self.level += 1;
+        self
+    }
+
+    #[inline]
+    pub(crate) fn exit(&mut self) -> usize {
+        self.level -= 1;
+        let old = self.morton.get_level(self.level);
+        self.morton.reset_level(self.level);
+        old
+    }
+
+    #[inline]
+    pub(crate) fn get(&self) -> usize {
+        self.morton.get_level(self.level - 1)
+    }
+
+    #[inline]
+    pub(crate) fn next(mut self) -> Option<Self> {
+        if self.level == 0 {
+            None
+        } else {
+            let last = self.exit();
+            if last == 7 {
+                None
+            } else {
+                Some(self.enter(last + 1))
+            }
+        }
+    }
+}
+
+impl Default for MortonRegion<u64> {
     fn default() -> Self {
         MortonRegion {
-            morton: Morton(T::zero()),
+            morton: Morton(0),
+            level: 0,
+        }
+    }
+}
+
+impl Default for MortonRegion<u128> {
+    fn default() -> Self {
+        MortonRegion {
+            morton: Morton(0),
             level: 0,
         }
     }
@@ -88,7 +136,16 @@ impl Hash for MortonRegion<u64> {
     where
         H: Hasher,
     {
-        state.write_u64((self.morton | MORTON_UNUSED_BIT).get_significant_bits(self.level))
+        state.write_u64(self.morton.get_significant_bits(self.level))
+    }
+}
+
+impl Hash for MortonRegion<u128> {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        state.write_u64(self.morton.get_significant_bits(self.level) as u64)
     }
 }
 
@@ -99,7 +156,7 @@ where
     #[inline]
     fn into(self) -> Vector3<S> {
         let Morton(v) = self.morton;
-        let cut = NUM_BITS_PER_DIM - self.level;
+        let cut = NUM_BITS_PER_DIM_64 - self.level;
         let (x, y, z) = morton::decode_3d(v >> (3 * cut));
         let scale = (S::one() + S::one()).powi(-(self.level as i32));
 
@@ -111,16 +168,36 @@ where
     }
 }
 
-pub struct MortonRegionIterator<'a, T> {
-    nodes: Vec<MortonRegion<u64>>,
-    limit: usize,
-    map: &'a MortonMap<T>,
+impl<S> Into<Vector3<S>> for MortonRegion<u128>
+where
+    S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
+{
+    #[inline]
+    fn into(self) -> Vector3<S> {
+        let Morton(v) = self.morton;
+        let (x, y, z) = decode_128(v);
+        let cut = NUM_BITS_PER_DIM_128 - self.level;
+        let (x, y, z) = (x >> cut, y >> cut, z >> cut);
+        let scale = (S::one() + S::one()).powi(-(self.level as i32));
+
+        Vector3::new(
+            (S::from_u64(x).unwrap() + S::from_f32(0.5).unwrap()) * scale,
+            (S::from_u64(y).unwrap() + S::from_f32(0.5).unwrap()) * scale,
+            (S::from_u64(z).unwrap() + S::from_f32(0.5).unwrap()) * scale,
+        )
+    }
 }
 
-impl<'a, T> MortonRegionIterator<'a, T> {
+pub struct MortonRegionIterator<'a, T, N> {
+    nodes: Vec<MortonRegion<N>>,
+    limit: usize,
+    map: &'a MortonMap<T, N>,
+}
+
+impl<'a, T, N> MortonRegionIterator<'a, T, N> {
     /// Takes a region to iterate over the regions within it and a limit for the depth level.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<u64>, limit: usize, map: &'a MortonMap<T>) -> Self {
+    pub fn new(region: MortonRegion<N>, limit: usize, map: &'a MortonMap<T, N>) -> Self {
         // Enough capacity for all the regions.
         let mut nodes = Vec::with_capacity(limit);
         nodes.push(region);
@@ -128,7 +205,7 @@ impl<'a, T> MortonRegionIterator<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for MortonRegionIterator<'a, T> {
+impl<'a, T> Iterator for MortonRegionIterator<'a, T, u64> {
     type Item = (MortonRegion<u64>, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -152,19 +229,43 @@ impl<'a, T> Iterator for MortonRegionIterator<'a, T> {
     }
 }
 
-pub struct MortonRegionFurtherIterator<'a, T, F> {
-    nodes: Vec<MortonRegion<u64>>,
-    further: F,
-    map: &'a MortonMap<T>,
+impl<'a, T> Iterator for MortonRegionIterator<'a, T, u128> {
+    type Item = (MortonRegion<u128>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(region) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Now try to retrieve this region from the map.
+            if let Some(item) = self.map.get(&region) {
+                // It worked, so we need to descend into this region further.
+                // Only do this so long as the level wouldn't exceed the limit.
+                if region.level < self.limit {
+                    self.nodes.push(region.enter(0));
+                }
+                return Some((region, item));
+            }
+        }
+        None
+    }
 }
 
-impl<'a, T, F> MortonRegionFurtherIterator<'a, T, F>
+pub struct MortonRegionFurtherIterator<'a, T, N, F> {
+    nodes: Vec<MortonRegion<N>>,
+    further: F,
+    map: &'a MortonMap<T, N>,
+}
+
+impl<'a, T, N, F> MortonRegionFurtherIterator<'a, T, N, F>
 where
-    F: FnMut(MortonRegion<u64>) -> bool,
+    F: FnMut(MortonRegion<N>) -> bool,
 {
     /// Takes a region to iterate over the regions within it and a limit for the depth level.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<u64>, further: F, map: &'a MortonMap<T>) -> Self {
+    pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonMap<T, N>) -> Self {
         MortonRegionFurtherIterator {
             nodes: vec![region],
             further,
@@ -173,7 +274,7 @@ where
     }
 }
 
-impl<'a, T, F> Iterator for MortonRegionFurtherIterator<'a, T, F>
+impl<'a, T, F> Iterator for MortonRegionFurtherIterator<'a, T, u64, F>
 where
     F: FnMut(MortonRegion<u64>) -> bool,
 {
@@ -200,19 +301,46 @@ where
     }
 }
 
-pub struct MortonRegionFurtherLeavesIterator<'a, T, F> {
-    nodes: Vec<MortonRegion<u64>>,
-    further: F,
-    map: &'a MortonMap<T>,
+impl<'a, T, F> Iterator for MortonRegionFurtherIterator<'a, T, u128, F>
+where
+    F: FnMut(MortonRegion<u128>) -> bool,
+{
+    type Item = (MortonRegion<u128>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(region) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Now try to retrieve this region from the map.
+            if let Some(item) = self.map.get(&region) {
+                // It worked, so we need to descend into this region further.
+                // Only do this so long as the level wouldn't exceed the limit.
+                if (self.further)(region) {
+                    self.nodes.push(region.enter(0));
+                }
+                return Some((region, item));
+            }
+        }
+        None
+    }
 }
 
-impl<'a, T, F> MortonRegionFurtherLeavesIterator<'a, T, F>
+pub struct MortonRegionFurtherLeavesIterator<'a, T, N, F> {
+    nodes: Vec<MortonRegion<N>>,
+    further: F,
+    map: &'a MortonMap<T, N>,
+}
+
+impl<'a, T, N, F> MortonRegionFurtherLeavesIterator<'a, T, N, F>
 where
-    F: FnMut(MortonRegion<u64>) -> bool,
+    F: FnMut(MortonRegion<N>) -> bool,
 {
     /// Takes a region to iterate over the regions within it and a limit for the depth level.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<u64>, further: F, map: &'a MortonMap<T>) -> Self {
+    pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonMap<T, N>) -> Self {
         MortonRegionFurtherLeavesIterator {
             nodes: vec![region],
             further,
@@ -221,7 +349,7 @@ where
     }
 }
 
-impl<'a, T, F> Iterator for MortonRegionFurtherLeavesIterator<'a, T, F>
+impl<'a, T, F> Iterator for MortonRegionFurtherLeavesIterator<'a, T, u64, F>
 where
     F: FnMut(MortonRegion<u64>) -> bool,
 {
@@ -238,7 +366,7 @@ where
             if let Some(item) = self.map.get(&region) {
                 // It worked, so we need to descend into this region further.
                 // Only do this so long as the level wouldn't exceed the limit.
-                if (self.further)(region) && region.level < NUM_BITS_PER_DIM - 1 {
+                if (self.further)(region) && region.level < NUM_BITS_PER_DIM_64 - 1 {
                     self.nodes.push(region.enter(0));
                 } else {
                     return Some((region, item));
@@ -249,14 +377,46 @@ where
     }
 }
 
-pub(crate) const NUM_BITS_PER_DIM: usize = 64 / 3;
-const MORTON_HIGHEST_BITS: Morton<u64> = Morton(0x7000_0000_0000_0000);
-const MORTON_UNUSED_BIT: Morton<u64> = Morton(0x8000_0000_0000_0000);
+impl<'a, T, F> Iterator for MortonRegionFurtherLeavesIterator<'a, T, u128, F>
+where
+    F: FnMut(MortonRegion<u128>) -> bool,
+{
+    type Item = (MortonRegion<u128>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(region) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Now try to retrieve this region from the map.
+            if let Some(item) = self.map.get(&region) {
+                // It worked, so we need to descend into this region further.
+                // Only do this so long as the level wouldn't exceed the limit.
+                if (self.further)(region) && region.level < NUM_BITS_PER_DIM_128 - 1 {
+                    self.nodes.push(region.enter(0));
+                } else {
+                    return Some((region, item));
+                }
+            }
+        }
+        None
+    }
+}
+
+pub(crate) const NUM_BITS_PER_DIM_64: usize = 64 / 3;
+pub(crate) const NUM_BITS_PER_DIM_128: usize = 128 / 3;
+const MORTON_HIGHEST_BITS_64: Morton<u64> = Morton(0x7000_0000_0000_0000);
+const MORTON_HIGHEST_BITS_128: Morton<u128> = Morton(0x3800_0000_0000_0000_0000_0000_0000_0000);
+const MORTON_UNUSED_BITS_64: Morton<u64> = Morton(0x8000_0000_0000_0000);
+const MORTON_UNUSED_BITS_128: Morton<u128> = Morton(0xC000_0000_0000_0000_0000_0000_0000_0000);
+const SINGLE_BITS_64: u64 = (1 << 21) - 1;
 
 impl Morton<u64> {
     #[inline]
     pub fn get_significant_bits(self, level: usize) -> u64 {
-        self.0 >> (3 * (NUM_BITS_PER_DIM - level - 1))
+        self.0 >> (3 * (NUM_BITS_PER_DIM_64 - level - 1))
     }
 
     #[inline]
@@ -266,13 +426,36 @@ impl Morton<u64> {
 
     #[inline]
     pub fn set_level(&mut self, level: usize, val: usize) {
-        *self = (*self & !(MORTON_HIGHEST_BITS >> (3 * level)))
-            | Morton((val as u64) << (3 * (NUM_BITS_PER_DIM - level - 1)))
+        *self = (*self & !(MORTON_HIGHEST_BITS_64 >> (3 * level)))
+            | Morton((val as u64) << (3 * (NUM_BITS_PER_DIM_64 - level - 1)))
     }
 
     #[inline]
     pub fn reset_level(&mut self, level: usize) {
-        *self = *self & !(MORTON_HIGHEST_BITS >> (3 * level))
+        *self = *self & !(MORTON_HIGHEST_BITS_64 >> (3 * level))
+    }
+}
+
+impl Morton<u128> {
+    #[inline]
+    pub fn get_significant_bits(self, level: usize) -> u128 {
+        self.0 >> (3 * (NUM_BITS_PER_DIM_128 - level - 1))
+    }
+
+    #[inline]
+    pub fn get_level(self, level: usize) -> usize {
+        (self.get_significant_bits(level) & 0x7) as usize
+    }
+
+    #[inline]
+    pub fn set_level(&mut self, level: usize, val: usize) {
+        *self = (*self & !(MORTON_HIGHEST_BITS_128 >> (3 * level)))
+            | Morton((val as u128) << (3 * (NUM_BITS_PER_DIM_128 - level - 1)))
+    }
+
+    #[inline]
+    pub fn reset_level(&mut self, level: usize) {
+        *self = *self & !(MORTON_HIGHEST_BITS_128 >> (3 * level))
     }
 }
 
@@ -283,11 +466,11 @@ where
     #[inline]
     fn from(point: Vector3<S>) -> Self {
         let point = point.map(|x| {
-            (x * (S::one() + S::one()).powi(NUM_BITS_PER_DIM as i32))
+            (x * (S::one() + S::one()).powi(NUM_BITS_PER_DIM_64 as i32))
                 .to_u64()
                 .unwrap()
         });
-        Morton(morton::encode_3d(point.x, point.y, point.z)) & !MORTON_UNUSED_BIT
+        Morton(morton::encode_3d(point.x, point.y, point.z)) & !MORTON_UNUSED_BITS_64
     }
 }
 
@@ -299,7 +482,7 @@ where
     fn into(self) -> Vector3<S> {
         let Morton(v) = self;
         let (x, y, z) = morton::decode_3d(v);
-        let scale = (S::one() + S::one()).powi(-(NUM_BITS_PER_DIM as i32));
+        let scale = (S::one() + S::one()).powi(-(NUM_BITS_PER_DIM_64 as i32));
 
         Vector3::new(
             (S::from_u64(x).unwrap() + S::from_f32(0.5).unwrap()) * scale,
@@ -309,8 +492,41 @@ where
     }
 }
 
-pub type MortonMap<T> = std::collections::HashMap<MortonRegion<u64>, T, PassthroughBuildHasher>;
-pub type MortonSet = std::collections::HashSet<MortonRegion<u64>, PassthroughBuildHasher>;
+impl<S> From<Vector3<S>> for Morton<u128>
+where
+    S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
+{
+    #[inline]
+    fn from(point: Vector3<S>) -> Self {
+        let point = point.map(|x| {
+            (x * (S::one() + S::one()).powi(NUM_BITS_PER_DIM_128 as i32))
+                .to_u64()
+                .unwrap()
+        });
+        Morton(encode_128(point.x, point.y, point.z)) & !MORTON_UNUSED_BITS_128
+    }
+}
+
+impl<S> Into<Vector3<S>> for Morton<u128>
+where
+    S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
+{
+    #[inline]
+    fn into(self) -> Vector3<S> {
+        let Morton(v) = self;
+        let (x, y, z) = decode_128(v);
+        let scale = (S::one() + S::one()).powi(-(NUM_BITS_PER_DIM_128 as i32));
+
+        Vector3::new(
+            (S::from_u64(x).unwrap() + S::from_f32(0.5).unwrap()) * scale,
+            (S::from_u64(y).unwrap() + S::from_f32(0.5).unwrap()) * scale,
+            (S::from_u64(z).unwrap() + S::from_f32(0.5).unwrap()) * scale,
+        )
+    }
+}
+
+pub type MortonMap<T, N> = std::collections::HashMap<MortonRegion<N>, T, PassthroughBuildHasher>;
+pub type MortonSet<N> = std::collections::HashSet<MortonRegion<N>, PassthroughBuildHasher>;
 
 pub type PassthroughBuildHasher = std::hash::BuildHasherDefault<PassthroughHash>;
 
@@ -328,55 +544,78 @@ impl Hasher for PassthroughHash {
     }
 
     #[inline]
-    fn write(&mut self, bytes: &[u8]) {
-        self.value = bytes[0] as u64;
+    fn write(&mut self, _: &[u8]) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_u8(&mut self, i: u8) {
-        self.value = i as u64;
+    fn write_u8(&mut self, _: u8) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_u16(&mut self, i: u16) {
-        self.value = i as u64;
+    fn write_u16(&mut self, _: u16) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_u32(&mut self, i: u32) {
-        self.value = i as u64;
+    fn write_u32(&mut self, _: u32) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
     fn write_u64(&mut self, i: u64) {
         self.value = i as u64;
     }
 
-    fn write_u128(&mut self, i: u128) {
-        self.value = i as u64;
+    fn write_u128(&mut self, _: u128) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_usize(&mut self, i: usize) {
-        self.value = i as u64;
+    fn write_usize(&mut self, _: usize) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_i8(&mut self, i: i8) {
-        self.value = i as u64;
+    fn write_i8(&mut self, _: i8) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_i16(&mut self, i: i16) {
-        self.value = i as u64;
+    fn write_i16(&mut self, _: i16) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_i32(&mut self, i: i32) {
-        self.value = i as u64;
+    fn write_i32(&mut self, _: i32) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_i64(&mut self, i: i64) {
-        self.value = i as u64;
+    fn write_i64(&mut self, _: i64) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_i128(&mut self, i: i128) {
-        self.value = i as u64;
+    fn write_i128(&mut self, _: i128) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
 
-    fn write_isize(&mut self, i: isize) {
-        self.value = i as u64;
+    fn write_isize(&mut self, _: isize) {
+        panic!("Passthrough hash should only be used with a single 64 bit value");
     }
+}
+
+#[inline]
+fn decode_128(i: u128) -> (u64, u64, u64) {
+    let low = i as u64;
+    let high = (i >> 63) as u64;
+    let (lowx, lowy, lowz) = morton::decode_3d(low);
+    let (highx, highy, highz) = morton::decode_3d(high);
+    (highx << 21 | lowx, highy << 21 | lowy, highz << 21 | lowz)
+}
+
+#[inline]
+#[allow(clippy::cast_lossless)]
+fn encode_128(x: u64, y: u64, z: u64) -> u128 {
+    let highx = x >> 21;
+    let lowx = x & SINGLE_BITS_64;
+    let highy = y >> 21;
+    let lowy = y & SINGLE_BITS_64;
+    let highz = z >> 21;
+    let lowz = z & SINGLE_BITS_64;
+    let high = morton::encode_3d(highx, highy, highz);
+    let low = morton::encode_3d(lowx, lowy, lowz);
+    (high as u128) << 63 | low as u128
 }
