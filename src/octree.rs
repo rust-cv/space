@@ -10,3 +10,10 @@ pub trait Gatherer<Item, N> {
         Item: 'a,
         I: Iterator<Item = (Morton<N>, &'a Item)>;
 }
+
+pub trait Folder {
+    type Sum;
+    fn sum<I>(&self, it: I) -> Self::Sum
+    where
+        I: Iterator<Item = Self::Sum>;
+}

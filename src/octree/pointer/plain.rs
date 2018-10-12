@@ -274,6 +274,27 @@ impl<T> Plain<T, u128> {
     {
         self.tree.iter_gather_deep_linear_hashed(gatherer)
     }
+
+    /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
+    pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
+        &self,
+        gatherer: &G,
+        folder: &F,
+    ) -> MortonMap<G::Sum, u128>
+    where
+        G: Gatherer<T, u128>,
+        F: Folder<Sum = G::Sum>,
+        G::Sum: Clone,
+    {
+        let mut map = MortonMap::default();
+        self.tree.iter_gather_deep_linear_hashed_tree_fold(
+            MortonRegion::default(),
+            gatherer,
+            folder,
+            &mut map,
+        );
+        map
+    }
 }
 
 impl<T, S> Extend<(Vector3<S>, T)> for Plain<T, u64>
@@ -659,6 +680,45 @@ impl<T> MortonOctree<T, u128> {
         }
 
         map
+    }
+
+    /// This gathers the tree into a linear hashed octree map in a tree fold.
+    pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
+        &self,
+        region: MortonRegion<u128>,
+        gatherer: &G,
+        folder: &F,
+        map: &mut MortonMap<G::Sum, u128>,
+    ) -> Option<G::Sum>
+    where
+        G: Gatherer<T, u128>,
+        F: Folder<Sum = G::Sum>,
+        G::Sum: Clone,
+    {
+        match self {
+            MortonOctree::Node(box ref n) => {
+                if region.level < NUM_BITS_PER_DIM_128 - 1 {
+                    let sum = folder.sum((0..8).filter_map(|i| {
+                        n[i].iter_gather_deep_linear_hashed_tree_fold(
+                            region.enter(i),
+                            gatherer,
+                            folder,
+                            map,
+                        )
+                    }));
+                    map.insert(region, sum.clone());
+                    Some(sum)
+                } else {
+                    None
+                }
+            }
+            MortonOctree::Leaf(ref items, morton) => {
+                let sum = gatherer.gather(items.iter().map(|i| (*morton, i)));
+                map.insert(region, sum.clone());
+                Some(sum)
+            }
+            _ => None,
+        }
     }
 
     #[inline]

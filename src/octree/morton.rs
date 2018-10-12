@@ -6,6 +6,14 @@ use derive_more as dm;
 
 use std::hash::{Hash, Hasher};
 
+pub(crate) const NUM_BITS_PER_DIM_64: usize = 64 / 3;
+pub(crate) const NUM_BITS_PER_DIM_128: usize = 128 / 3;
+const MORTON_HIGHEST_BITS_64: Morton<u64> = Morton(0x7000_0000_0000_0000);
+const MORTON_HIGHEST_BITS_128: Morton<u128> = Morton(0x3800_0000_0000_0000_0000_0000_0000_0000);
+const MORTON_UNUSED_BITS_64: Morton<u64> = Morton(0x8000_0000_0000_0000);
+const MORTON_UNUSED_BITS_128: Morton<u128> = Morton(0xC000_0000_0000_0000_0000_0000_0000_0000);
+const SINGLE_BITS_64: u64 = (1 << 21) - 1;
+
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized, boxes.
 #[derive(
     Debug,
@@ -136,7 +144,7 @@ impl Hash for MortonRegion<u64> {
     where
         H: Hasher,
     {
-        state.write_u64(self.morton.get_significant_bits(self.level))
+        state.write_u64((self.morton | MORTON_UNUSED_BITS_64).get_significant_bits(self.level))
     }
 }
 
@@ -145,7 +153,9 @@ impl Hash for MortonRegion<u128> {
     where
         H: Hasher,
     {
-        state.write_u64(self.morton.get_significant_bits(self.level) as u64)
+        let bits = (self.morton | MORTON_UNUSED_BITS_128).get_significant_bits(self.level);
+
+        state.write_u64((bits >> 64) as u64 ^ bits as u64)
     }
 }
 
@@ -329,7 +339,7 @@ where
 }
 
 pub struct MortonRegionFurtherLeavesIterator<'a, T, N, F> {
-    nodes: Vec<MortonRegion<N>>,
+    nodes: Vec<(MortonRegion<N>, bool)>,
     further: F,
     map: &'a MortonMap<T, N>,
 }
@@ -342,7 +352,7 @@ where
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
     pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonMap<T, N>) -> Self {
         MortonRegionFurtherLeavesIterator {
-            nodes: vec![region],
+            nodes: vec![(region, false)],
             further,
             map,
         }
@@ -356,21 +366,34 @@ where
     type Item = (MortonRegion<u64>, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(region) = self.nodes.pop() {
+        while let Some((region, had_child)) = self.nodes.pop() {
             // Then update the region for the next iteration.
-            if let Some(next) = region.next() {
-                self.nodes.push(next);
-            }
+            // Also get whether this is the last iteration of this child.
+            let last = if let Some(next) = region.next() {
+                self.nodes.push((next, had_child));
+                false
+            } else {
+                true
+            };
 
             // Now try to retrieve this region from the map.
             if let Some(item) = self.map.get(&region) {
+                // Let the parent node know it had a child.
+                if let Some((_, ref mut had_child)) = self.nodes.last_mut() {
+                    *had_child = true;
+                }
                 // It worked, so we need to descend into this region further.
                 // Only do this so long as the level wouldn't exceed the limit.
                 if (self.further)(region) && region.level < NUM_BITS_PER_DIM_64 - 1 {
-                    self.nodes.push(region.enter(0));
+                    self.nodes.push((region.enter(0), false));
                 } else {
                     return Some((region, item));
                 }
+            } else if last && !had_child {
+                let mut parent_region = region;
+                parent_region.exit();
+                // If the parent failed to retrieve the child region and its the last child, it was a leaf.
+                return Some((parent_region, self.map.get(&parent_region).unwrap()));
             }
         }
         None
@@ -384,34 +407,39 @@ where
     type Item = (MortonRegion<u128>, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(region) = self.nodes.pop() {
+        while let Some((region, had_child)) = self.nodes.pop() {
             // Then update the region for the next iteration.
-            if let Some(next) = region.next() {
-                self.nodes.push(next);
-            }
+            // Also get whether this is the last iteration of this child.
+            let last = if let Some(next) = region.next() {
+                self.nodes.push((next, had_child));
+                false
+            } else {
+                true
+            };
 
             // Now try to retrieve this region from the map.
             if let Some(item) = self.map.get(&region) {
+                // Let the parent node know it had a child.
+                if let Some((_, ref mut had_child)) = self.nodes.last_mut() {
+                    *had_child = true;
+                }
                 // It worked, so we need to descend into this region further.
                 // Only do this so long as the level wouldn't exceed the limit.
                 if (self.further)(region) && region.level < NUM_BITS_PER_DIM_128 - 1 {
-                    self.nodes.push(region.enter(0));
+                    self.nodes.push((region.enter(0), false));
                 } else {
                     return Some((region, item));
                 }
+            } else if last && !had_child {
+                let mut parent_region = region;
+                parent_region.exit();
+                // If the parent failed to retrieve the child region and its the last child, it was a leaf.
+                return Some((parent_region, self.map.get(&parent_region).unwrap()));
             }
         }
         None
     }
 }
-
-pub(crate) const NUM_BITS_PER_DIM_64: usize = 64 / 3;
-pub(crate) const NUM_BITS_PER_DIM_128: usize = 128 / 3;
-const MORTON_HIGHEST_BITS_64: Morton<u64> = Morton(0x7000_0000_0000_0000);
-const MORTON_HIGHEST_BITS_128: Morton<u128> = Morton(0x3800_0000_0000_0000_0000_0000_0000_0000);
-const MORTON_UNUSED_BITS_64: Morton<u64> = Morton(0x8000_0000_0000_0000);
-const MORTON_UNUSED_BITS_128: Morton<u128> = Morton(0xC000_0000_0000_0000_0000_0000_0000_0000);
-const SINGLE_BITS_64: u64 = (1 << 21) - 1;
 
 impl Morton<u64> {
     #[inline]
