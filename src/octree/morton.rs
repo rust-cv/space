@@ -144,7 +144,7 @@ impl Hash for MortonRegion<u64> {
     where
         H: Hasher,
     {
-        state.write_u64((self.morton | MORTON_UNUSED_BITS_64).get_significant_bits(self.level))
+        state.write_u64(self.morton.get_significant_bits(self.level))
     }
 }
 
@@ -153,9 +153,9 @@ impl Hash for MortonRegion<u128> {
     where
         H: Hasher,
     {
-        let bits = (self.morton | MORTON_UNUSED_BITS_128).get_significant_bits(self.level);
+        let bits = self.morton.get_significant_bits(self.level);
 
-        state.write_u64((bits >> 64) as u64 ^ bits as u64)
+        state.write_u64(bits as u64)
     }
 }
 
