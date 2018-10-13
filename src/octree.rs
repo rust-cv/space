@@ -1,7 +1,8 @@
 mod morton;
-pub mod pointer;
+mod pointer;
 
 pub use self::morton::*;
+pub use self::pointer::Pointer;
 
 pub trait Gatherer<Item, N> {
     type Sum;
