@@ -13,6 +13,7 @@ either = "1.5.0"
 bitwise = "0.1.1"
 int_hash = "0.1.1"
 streaming-iterator = "0.1.4"
+smallvec = "0.6.5"
 
 [dev-dependencies]
 rand = "0.5.5"

@@ -201,13 +201,13 @@ where
 pub struct MortonRegionIterator<'a, T, N> {
     nodes: Vec<MortonRegion<N>>,
     limit: usize,
-    map: &'a MortonMap<T, N>,
+    map: &'a MortonRegionMap<T, N>,
 }
 
 impl<'a, T, N> MortonRegionIterator<'a, T, N> {
     /// Takes a region to iterate over the regions within it and a limit for the depth level.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<N>, limit: usize, map: &'a MortonMap<T, N>) -> Self {
+    pub fn new(region: MortonRegion<N>, limit: usize, map: &'a MortonRegionMap<T, N>) -> Self {
         // Enough capacity for all the regions.
         let mut nodes = Vec::with_capacity(limit);
         nodes.push(region);
@@ -266,7 +266,7 @@ impl<'a, T> Iterator for MortonRegionIterator<'a, T, u128> {
 pub struct MortonRegionFurtherIterator<'a, T, N, F> {
     nodes: Vec<MortonRegion<N>>,
     further: F,
-    map: &'a MortonMap<T, N>,
+    map: &'a MortonRegionMap<T, N>,
 }
 
 impl<'a, T, N, F> MortonRegionFurtherIterator<'a, T, N, F>
@@ -275,7 +275,7 @@ where
 {
     /// Takes a region to iterate over the regions within it and a limit for the depth level.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonMap<T, N>) -> Self {
+    pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonRegionMap<T, N>) -> Self {
         MortonRegionFurtherIterator {
             nodes: vec![region],
             further,
@@ -341,7 +341,7 @@ where
 pub struct MortonRegionFurtherLeavesIterator<'a, T, N, F> {
     nodes: Vec<(MortonRegion<N>, bool)>,
     further: F,
-    map: &'a MortonMap<T, N>,
+    map: &'a MortonRegionMap<T, N>,
 }
 
 impl<'a, T, N, F> MortonRegionFurtherLeavesIterator<'a, T, N, F>
@@ -350,7 +350,7 @@ where
 {
     /// Takes a region to iterate over the regions within it and a limit for the depth level.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonMap<T, N>) -> Self {
+    pub fn new(region: MortonRegion<N>, further: F, map: &'a MortonRegionMap<T, N>) -> Self {
         MortonRegionFurtherLeavesIterator {
             nodes: vec![(region, false)],
             further,
@@ -462,6 +462,14 @@ impl Morton<u64> {
     pub fn reset_level(&mut self, level: usize) {
         *self = *self & !(MORTON_HIGHEST_BITS_64 >> (3 * level))
     }
+
+    #[inline]
+    pub fn levels(self) -> impl Iterator<Item = MortonRegion<u64>> {
+        (1..=NUM_BITS_PER_DIM_64).map(move |i| MortonRegion {
+            morton: Morton(self.get_significant_bits(i) << (3 * (NUM_BITS_PER_DIM_64 - i - 1))),
+            level: i,
+        })
+    }
 }
 
 impl Morton<u128> {
@@ -484,6 +492,14 @@ impl Morton<u128> {
     #[inline]
     pub fn reset_level(&mut self, level: usize) {
         *self = *self & !(MORTON_HIGHEST_BITS_128 >> (3 * level))
+    }
+
+    #[inline]
+    pub fn levels(self) -> impl Iterator<Item = MortonRegion<u128>> {
+        (1..=NUM_BITS_PER_DIM_128).map(move |i| MortonRegion {
+            morton: Morton(self.get_significant_bits(i) << (3 * (NUM_BITS_PER_DIM_128 - i - 1))),
+            level: i,
+        })
     }
 }
 
@@ -553,8 +569,11 @@ where
     }
 }
 
-pub type MortonMap<T, N> = std::collections::HashMap<MortonRegion<N>, T, PassthroughBuildHasher>;
-pub type MortonSet<N> = std::collections::HashSet<MortonRegion<N>, PassthroughBuildHasher>;
+pub type MortonRegionMap<T, N> =
+    std::collections::HashMap<MortonRegion<N>, T, PassthroughBuildHasher>;
+pub type MortonRegionSet<N> = std::collections::HashSet<MortonRegion<N>, PassthroughBuildHasher>;
+pub type MortonMap<T, N> = std::collections::HashMap<Morton<N>, T, PassthroughBuildHasher>;
+pub type MortonSet<N> = std::collections::HashSet<Morton<N>, PassthroughBuildHasher>;
 
 pub type PassthroughBuildHasher = std::hash::BuildHasherDefault<PassthroughHash>;
 

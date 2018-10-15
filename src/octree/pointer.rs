@@ -130,7 +130,7 @@ impl<T> Pointer<T, u64> {
         &'a self,
         further: F,
         gatherer: G,
-        cache: &'a mut MortonMap<G::Sum, u64>,
+        cache: &'a mut MortonRegionMap<G::Sum, u64>,
     ) -> CacheGatherIter<'a, T, u64, F, G>
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
@@ -140,7 +140,7 @@ impl<T> Pointer<T, u64> {
     }
 
     /// This gathers the tree into a linear hashed octree map.
-    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonMap<G::Sum, u64>
+    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonRegionMap<G::Sum, u64>
     where
         G: Gatherer<T, u64>,
     {
@@ -152,13 +152,13 @@ impl<T> Pointer<T, u64> {
         &self,
         gatherer: &G,
         folder: &F,
-    ) -> MortonMap<G::Sum, u64>
+    ) -> MortonRegionMap<G::Sum, u64>
     where
         G: Gatherer<T, u64>,
         F: Folder<Sum = G::Sum>,
         G::Sum: Clone,
     {
-        let mut map = MortonMap::default();
+        let mut map = MortonRegionMap::default();
         self.tree.iter_gather_deep_linear_hashed_tree_fold(
             MortonRegion::default(),
             gatherer,
@@ -279,7 +279,7 @@ impl<T> Pointer<T, u128> {
         &'a self,
         further: F,
         gatherer: G,
-        cache: &'a mut MortonMap<G::Sum, u128>,
+        cache: &'a mut MortonRegionMap<G::Sum, u128>,
     ) -> CacheGatherIter<'a, T, u128, F, G>
     where
         F: FnMut(MortonRegion<u128>) -> bool + 'a,
@@ -289,7 +289,7 @@ impl<T> Pointer<T, u128> {
     }
 
     /// This gathers the tree into a linear hashed octree map.
-    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonMap<G::Sum, u128>
+    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonRegionMap<G::Sum, u128>
     where
         G: Gatherer<T, u128>,
     {
@@ -301,13 +301,13 @@ impl<T> Pointer<T, u128> {
         &self,
         gatherer: &G,
         folder: &F,
-    ) -> MortonMap<G::Sum, u128>
+    ) -> MortonRegionMap<G::Sum, u128>
     where
         G: Gatherer<T, u128>,
         F: Folder<Sum = G::Sum>,
         G::Sum: Clone,
     {
-        let mut map = MortonMap::default();
+        let mut map = MortonRegionMap::default();
         self.tree.iter_gather_deep_linear_hashed_tree_fold(
             MortonRegion::default(),
             gatherer,
@@ -439,7 +439,7 @@ impl<T> MortonOctree<T, u64> {
         &'a self,
         mut further: F,
         gatherer: G,
-        cache: &'a mut MortonMap<G::Sum, u64>,
+        cache: &'a mut MortonRegionMap<G::Sum, u64>,
     ) -> CacheGatherIter<'a, T, u64, F, G>
     where
         F: FnMut(MortonRegion<u64>) -> bool + 'a,
@@ -484,11 +484,11 @@ impl<T> MortonOctree<T, u64> {
     }
 
     /// This gathers the tree into a linear hashed octree map.
-    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonMap<G::Sum, u64>
+    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonRegionMap<G::Sum, u64>
     where
         G: Gatherer<T, u64>,
     {
-        let mut map = MortonMap::default();
+        let mut map = MortonRegionMap::default();
         let base_region: MortonRegion<u64> = MortonRegion {
             morton: Morton(0),
             level: 0,
@@ -545,7 +545,7 @@ impl<T> MortonOctree<T, u64> {
         region: MortonRegion<u64>,
         gatherer: &G,
         folder: &F,
-        map: &mut MortonMap<G::Sum, u64>,
+        map: &mut MortonRegionMap<G::Sum, u64>,
     ) -> Option<G::Sum>
     where
         G: Gatherer<T, u64>,
@@ -642,7 +642,7 @@ impl<T> MortonOctree<T, u128> {
         &'a self,
         mut further: F,
         gatherer: G,
-        cache: &'a mut MortonMap<G::Sum, u128>,
+        cache: &'a mut MortonRegionMap<G::Sum, u128>,
     ) -> CacheGatherIter<'a, T, u128, F, G>
     where
         F: FnMut(MortonRegion<u128>) -> bool + 'a,
@@ -687,11 +687,11 @@ impl<T> MortonOctree<T, u128> {
     }
 
     /// This gathers the tree into a linear hashed octree map.
-    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonMap<G::Sum, u128>
+    pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonRegionMap<G::Sum, u128>
     where
         G: Gatherer<T, u128>,
     {
-        let mut map = MortonMap::default();
+        let mut map = MortonRegionMap::default();
         let base_region: MortonRegion<u128> = MortonRegion {
             morton: Morton(0),
             level: 0,
@@ -748,7 +748,7 @@ impl<T> MortonOctree<T, u128> {
         region: MortonRegion<u128>,
         gatherer: &G,
         folder: &F,
-        map: &mut MortonMap<G::Sum, u128>,
+        map: &mut MortonRegionMap<G::Sum, u128>,
     ) -> Option<G::Sum>
     where
         G: Gatherer<T, u128>,
@@ -982,7 +982,7 @@ where
     nodes: MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, N>,
     further: F,
     gatherer: G,
-    cache: &'a mut MortonMap<G::Sum, N>,
+    cache: &'a mut MortonRegionMap<G::Sum, N>,
 }
 
 impl<'a, T, N, F, G> MortonOctreeFurtherGatherCacheIter<'a, T, N, F, G>
@@ -993,7 +993,7 @@ where
         nodes: MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, N>,
         further: F,
         gatherer: G,
-        cache: &'a mut MortonMap<G::Sum, N>,
+        cache: &'a mut MortonRegionMap<G::Sum, N>,
     ) -> Self {
         MortonOctreeFurtherGatherCacheIter {
             nodes,
@@ -1027,7 +1027,8 @@ where
             // NOTE: This unsafe code is thought to be sound. By making the lifetime of the returned
             // G::Sum tied to the iterator, it is thought that the cache it is in cannot be mutated and
             // cause a potential data race.
-            let cache: &'a mut MortonMap<G::Sum, u64> = unsafe { &mut *(self.cache as *mut _) };
+            let cache: &'a mut MortonRegionMap<G::Sum, u64> =
+                unsafe { &mut *(self.cache as *mut _) };
 
             match node[region.get()] {
                 MortonOctree::Node(ref children) => {
@@ -1080,7 +1081,8 @@ where
             // NOTE: This unsafe code is thought to be sound. By making the lifetime of the returned
             // G::Sum tied to the iterator, it is thought that the cache it is in cannot be mutated and
             // cause a potential data race.
-            let cache: &'a mut MortonMap<G::Sum, u128> = unsafe { &mut *(self.cache as *mut _) };
+            let cache: &'a mut MortonRegionMap<G::Sum, u128> =
+                unsafe { &mut *(self.cache as *mut _) };
 
             match node[region.get()] {
                 MortonOctree::Node(ref children) => {
