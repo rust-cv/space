@@ -470,6 +470,16 @@ impl Morton<u64> {
             level: i,
         })
     }
+
+    #[inline]
+    pub fn null() -> Self {
+        Morton(!0)
+    }
+
+    #[inline]
+    pub fn is_null(self) -> bool {
+        self.0 == !0
+    }
 }
 
 impl Morton<u128> {
@@ -496,10 +506,20 @@ impl Morton<u128> {
 
     #[inline]
     pub fn levels(self) -> impl Iterator<Item = MortonRegion<u128>> {
-        (1..=NUM_BITS_PER_DIM_128).map(move |i| MortonRegion {
+        (0..=NUM_BITS_PER_DIM_128).map(move |i| MortonRegion {
             morton: Morton(self.get_significant_bits(i) << (3 * (NUM_BITS_PER_DIM_128 - i - 1))),
             level: i,
         })
+    }
+
+    #[inline]
+    pub fn null() -> Self {
+        Morton(!0)
+    }
+
+    #[inline]
+    pub fn is_null(self) -> bool {
+        self.0 == !0
     }
 }
 
