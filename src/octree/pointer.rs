@@ -39,7 +39,7 @@ impl<T> Pointer<T, u64> {
         }
 
         // Convert the point into normalized space.
-        Morton::from(point.map(|n| (n + bound) / bound.powi(2)))
+        Morton::from(point.map(|n| (n + bound) / (S::one() + S::one()).powi(self.level + 1)))
     }
 
     /// Insert an item with a point and return the existing item if they would both occupy the same space.
@@ -554,7 +554,7 @@ impl<T> MortonOctree<T, u64> {
     {
         match self {
             MortonOctree::Node(box ref n) => {
-                if region.level < NUM_BITS_PER_DIM_64 - 1 {
+                if region.level < NUM_BITS_PER_DIM_64 {
                     let sum = folder.sum((0..8).filter_map(|i| {
                         n[i].iter_gather_deep_linear_hashed_tree_fold(
                             region.enter(i),

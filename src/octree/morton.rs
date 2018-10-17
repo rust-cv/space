@@ -24,7 +24,6 @@ const SINGLE_BITS_64: u64 = (1 << 21) - 1;
     PartialEq,
     Ord,
     PartialOrd,
-    Hash,
     dm::Not,
     dm::BitOr,
     dm::BitAnd,
@@ -144,7 +143,9 @@ impl Hash for MortonRegion<u64> {
     where
         H: Hasher,
     {
-        state.write_u64(self.morton.get_significant_bits(self.level))
+        if self.level != 0 {
+            state.write_u64(self.morton.get_significant_bits(self.level))
+        }
     }
 }
 
@@ -153,9 +154,29 @@ impl Hash for MortonRegion<u128> {
     where
         H: Hasher,
     {
-        let bits = self.morton.get_significant_bits(self.level);
+        if self.level != 0 {
+            let bits = self.morton.get_significant_bits(self.level);
 
-        state.write_u64(bits as u64)
+            state.write_u64(bits as u64)
+        }
+    }
+}
+
+impl Hash for Morton<u64> {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        state.write_u64(self.0)
+    }
+}
+
+impl Hash for Morton<u128> {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        state.write_u64(self.0 as u64 ^ (self.0 >> 64) as u64)
     }
 }
 
@@ -260,6 +281,70 @@ impl<'a, T> Iterator for MortonRegionIterator<'a, T, u128> {
             }
         }
         None
+    }
+}
+
+pub struct MortonRegionFurtherLinearIterator<N, F> {
+    nodes: Vec<MortonRegion<N>>,
+    further: F,
+}
+
+impl<N, F> MortonRegionFurtherLinearIterator<N, F>
+where
+    F: FnMut(MortonRegion<N>) -> bool,
+{
+    /// Takes a region to iterate over the regions within it and a limit for the depth level.
+    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
+    pub fn new(region: MortonRegion<N>, further: F) -> Self {
+        MortonRegionFurtherLinearIterator {
+            nodes: vec![region],
+            further,
+        }
+    }
+}
+
+impl<F> Iterator for MortonRegionFurtherLinearIterator<u64, F>
+where
+    F: FnMut(MortonRegion<u64>) -> bool,
+{
+    type Item = MortonRegion<u64>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.nodes.pop().map(|region| {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Check if we should descend further.
+            if region.level < NUM_BITS_PER_DIM_64 && (self.further)(region) {
+                self.nodes.push(region.enter(0));
+            }
+            region
+        })
+    }
+}
+
+impl<F> Iterator for MortonRegionFurtherLinearIterator<u128, F>
+where
+    F: FnMut(MortonRegion<u128>) -> bool,
+{
+    type Item = MortonRegion<u128>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.nodes.pop().map(|region| {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push(next);
+            }
+
+            // Check if we should descend further.
+            if region.level < NUM_BITS_PER_DIM_128 && (self.further)(region) {
+                self.nodes.push(region.enter(0));
+            }
+            region
+        })
     }
 }
 
@@ -465,10 +550,12 @@ impl Morton<u64> {
 
     #[inline]
     pub fn levels(self) -> impl Iterator<Item = MortonRegion<u64>> {
-        (1..=NUM_BITS_PER_DIM_64).map(move |i| MortonRegion {
-            morton: Morton(self.get_significant_bits(i) << (3 * (NUM_BITS_PER_DIM_64 - i - 1))),
-            level: i,
-        })
+        std::iter::once(MortonRegion::default()).chain((1..=NUM_BITS_PER_DIM_64).map(move |i| {
+            MortonRegion {
+                morton: Morton(self.get_significant_bits(i - 1) << (3 * (NUM_BITS_PER_DIM_64 - i))),
+                level: i,
+            }
+        }))
     }
 
     #[inline]
@@ -506,10 +593,14 @@ impl Morton<u128> {
 
     #[inline]
     pub fn levels(self) -> impl Iterator<Item = MortonRegion<u128>> {
-        (0..=NUM_BITS_PER_DIM_128).map(move |i| MortonRegion {
-            morton: Morton(self.get_significant_bits(i) << (3 * (NUM_BITS_PER_DIM_128 - i - 1))),
-            level: i,
-        })
+        std::iter::once(MortonRegion::default()).chain((1..=NUM_BITS_PER_DIM_128).map(move |i| {
+            MortonRegion {
+                morton: Morton(
+                    self.get_significant_bits(i - 1) << (3 * (NUM_BITS_PER_DIM_128 - i)),
+                ),
+                level: i,
+            }
+        }))
     }
 
     #[inline]
