@@ -130,16 +130,19 @@ impl<T> Linear<T, u64> {
             }
             None => {
                 // This needs to be traversed deeper.
-                let sum = folder.sum((0..8).filter_map(|i| {
+                if let Some(sum) = folder.sum((0..8).filter_map(|i| {
                     self.iter_gather_deep_linear_hashed_tree_fold_map_adder(
                         region.enter(i),
                         gatherer,
                         folder,
                         map,
                     )
-                }));
-                map.insert(region, sum.clone());
-                Some(sum)
+                })) {
+                    map.insert(region, sum.clone());
+                    Some(sum)
+                } else {
+                    None
+                }
             }
             _ => None,
         }
@@ -273,16 +276,19 @@ impl<T> Linear<T, u128> {
             }
             None => {
                 // This needs to be traversed deeper.
-                let sum = folder.sum((0..8).filter_map(|i| {
+                if let Some(sum) = folder.sum((0..8).filter_map(|i| {
                     self.iter_gather_deep_linear_hashed_tree_fold_map_adder(
                         region.enter(i),
                         gatherer,
                         folder,
                         map,
                     )
-                }));
-                map.insert(region, sum.clone());
-                Some(sum)
+                })) {
+                    map.insert(region, sum.clone());
+                    Some(sum)
+                } else {
+                    None
+                }
             }
             _ => None,
         }

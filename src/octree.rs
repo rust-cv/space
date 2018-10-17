@@ -19,7 +19,7 @@ pub trait Gatherer<Item, N> {
 
 pub trait Folder {
         type Sum;
-        fn sum<I>(&self, it: I) -> Self::Sum
+        fn sum<I>(&self, it: I) -> Option<Self::Sum>
         where
                 I: Iterator<Item = Self::Sum>;
 }

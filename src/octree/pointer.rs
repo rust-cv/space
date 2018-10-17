@@ -188,7 +188,7 @@ impl<T> Pointer<T, u128> {
         }
 
         // Convert the point into normalized space.
-        Morton::from(point.map(|n| (n + bound) / bound.powi(2)))
+        Morton::from(point.map(|n| (n + bound) / (S::one() + S::one()).powi(self.level + 1)))
     }
 
     /// Insert an item with a point and return the existing item if they would both occupy the same space.
@@ -554,19 +554,22 @@ impl<T> MortonOctree<T, u64> {
     {
         match self {
             MortonOctree::Node(box ref n) => {
-                if region.level < NUM_BITS_PER_DIM_64 - 1 {
-                    let sum = folder.sum((0..8).filter_map(|i| {
+                if region.level < NUM_BITS_PER_DIM_64 {
+                    if let Some(sum) = folder.sum((0..8).filter_map(|i| {
                         n[i].iter_gather_deep_linear_hashed_tree_fold(
                             region.enter(i),
                             gatherer,
                             folder,
                             map,
                         )
-                    }));
-                    map.insert(region, sum.clone());
-                    Some(sum)
+                    })) {
+                        map.insert(region, sum.clone());
+                        Some(sum)
+                    } else {
+                        None
+                    }
                 } else {
-                    None
+                    panic!("iter_gather_deep_linear_hashed_tree_fold(): if we get here, then we let a leaf descend pass morton range");
                 }
             }
             MortonOctree::Leaf(ref items, morton) => {
@@ -757,19 +760,22 @@ impl<T> MortonOctree<T, u128> {
     {
         match self {
             MortonOctree::Node(box ref n) => {
-                if region.level < NUM_BITS_PER_DIM_128 - 1 {
-                    let sum = folder.sum((0..8).filter_map(|i| {
+                if region.level < NUM_BITS_PER_DIM_128 {
+                    if let Some(sum) = folder.sum((0..8).filter_map(|i| {
                         n[i].iter_gather_deep_linear_hashed_tree_fold(
                             region.enter(i),
                             gatherer,
                             folder,
                             map,
                         )
-                    }));
-                    map.insert(region, sum.clone());
-                    Some(sum)
+                    })) {
+                        map.insert(region, sum.clone());
+                        Some(sum)
+                    } else {
+                        None
+                    }
                 } else {
-                    None
+                    panic!("iter_gather_deep_linear_hashed_tree_fold(): if we get here, then we let a leaf descend pass morton range");
                 }
             }
             MortonOctree::Leaf(ref items, morton) => {
