@@ -9,11 +9,15 @@ use rand::{Rng, SeedableRng};
 
 use space::octree;
 
-fn octree_insertion<'a, I: IntoIterator<Item = (&'a Vector3<f64>, i32)>>(
+fn octree_insertion<I: IntoIterator<Item = (Vector3<f64>, i32)>>(
     vecs: I,
 ) -> octree::Pointer<i32, u128> {
-    let mut octree = octree::Pointer::<_, u128>::new(0);
-    octree.extend(vecs);
+    let mut octree = octree::Pointer::<_, u128>::new();
+    let space = octree::LeveledRegion(0);
+    octree.extend(
+        vecs.into_iter()
+            .map(|(v, i)| (space.discretize(v).unwrap(), i)),
+    );
     octree
 }
 
@@ -39,13 +43,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             "insertion",
             |b, &n| {
                 let points = random_points(n);
-                b.iter(move || octree_insertion(points.iter().map(|v| (v, 0))))
+                b.iter(move || octree_insertion(points.iter().cloned().map(|v| (v, 0))))
             },
             (10..39).map(|n| 1.5f64.powi(n) as usize),
         )
         .with_function("iteration", |b, &n| {
             let points = random_points(n);
-            let octree = octree_insertion(points.iter().map(|v| (v, 0)));
+            let octree = octree_insertion(points.iter().cloned().map(|v| (v, 0)));
             b.iter(move || assert_eq!(octree.iter().count(), n))
         })
         .sample_size(5)

@@ -27,22 +27,20 @@ pub trait Folder {
 pub struct LeveledRegion(pub i32);
 
 impl LeveledRegion {
-        pub fn discretize<S, T>(&self, point: &Vector3<S>) -> Option<T>
+        pub fn discretize<S, M>(&self, point: Vector3<S>) -> Option<M>
         where
                 S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
-                Vector3<S>: Into<T>,
+                M: Morton + std::fmt::Debug + 'static,
         {
                 let bound = (S::one() + S::one()).powi(self.0);
                 if point.iter().any(|n| n.abs() > bound) {
                         None
                 } else {
                         // Convert the point into normalized space.
-                        Some(
-                                (point.map(|n| {
-                                        (n + bound) / (S::one() + S::one()).powi(self.0 + 1)
-                                }))
-                                .into(),
-                        )
+                        let MortonWrapper(m) = (point
+                                .map(|n| (n + bound) / (S::one() + S::one()).powi(self.0 + 1)))
+                        .into();
+                        Some(m)
                 }
         }
 }

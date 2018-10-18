@@ -1,7 +1,5 @@
 use crate::octree::morton::*;
 use crate::octree::*;
-use nalgebra::Vector3;
-use num::{Float, FromPrimitive, ToPrimitive};
 
 use itertools::Itertools;
 
@@ -16,8 +14,14 @@ type CacheGatherIter<'a, T, M, F, G: Gatherer<T, M>> = either::Either<
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 pub struct Pointer<T, M> {
     tree: MortonOctree<T, M>,
-    /// Dimensions of the top level node are from [-2**level, 2**level].
-    level: i32,
+}
+
+impl<T, M> Default for Pointer<T, M> {
+    fn default() -> Self {
+        Pointer {
+            tree: MortonOctree::default(),
+        }
+    }
 }
 
 impl<T, M> Pointer<T, M>
@@ -25,26 +29,8 @@ where
     M: Morton,
 {
     /// Dimensions of the top level node are fixed in the range [-2**level, 2**level].
-    pub fn new(level: i32) -> Self {
-        Pointer {
-            tree: MortonOctree::default(),
-            level,
-        }
-    }
-
-    pub fn morton<S>(&self, point: &Vector3<S>) -> M
-    where
-        S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
-        M: std::fmt::Debug + 'static,
-    {
-        let bound = (S::one() + S::one()).powi(self.level);
-        if point.iter().any(|n| n.abs() > bound) {
-            panic!("space::Octree::morton(): tried to compute a Morton outside the Octree bounds");
-        }
-
-        // Convert the point into normalized space.
-        MortonWrapper::from(point.map(|n| (n + bound) / (S::one() + S::one()).powi(self.level + 1)))
-            .0
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Insert an item with a point and return the existing item if they would both occupy the same space.
@@ -174,32 +160,16 @@ where
     }
 }
 
-impl<T, S, M> Extend<(Vector3<S>, T)> for Pointer<T, M>
+impl<T, M> Extend<(M, T)> for Pointer<T, M>
 where
-    M: Morton + std::fmt::Debug + 'static,
-    S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
+    M: Morton,
 {
     fn extend<I>(&mut self, it: I)
     where
-        I: IntoIterator<Item = (Vector3<S>, T)>,
+        I: IntoIterator<Item = (M, T)>,
     {
-        for (v, item) in it.into_iter() {
-            self.insert(self.morton(&v), item);
-        }
-    }
-}
-
-impl<'a, T, M, S> Extend<(&'a Vector3<S>, T)> for Pointer<T, M>
-where
-    M: Morton + std::fmt::Debug + 'static,
-    S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
-{
-    fn extend<I>(&mut self, it: I)
-    where
-        I: IntoIterator<Item = (&'a Vector3<S>, T)>,
-    {
-        for (v, item) in it.into_iter() {
-            self.insert(self.morton(v), item);
+        for (m, item) in it.into_iter() {
+            self.insert(m, item);
         }
     }
 }
@@ -633,7 +603,8 @@ mod tests {
         let mut yrng = SmallRng::from_seed([4; 16]);
         let mut zrng = SmallRng::from_seed([0; 16]);
 
-        let mut octree = Pointer::<_, u128>::new(0);
+        let mut octree = Pointer::<_, u128>::new();
+        let space = LeveledRegion(0);
         octree.extend(
             izip!(
                 xrng.sample_iter(&Open01),
@@ -641,7 +612,7 @@ mod tests {
                 zrng.sample_iter(&Open01)
             )
             .take(5000)
-            .map(|(x, y, z)| (Vector3::<f64>::new(x, y, z), 0)),
+            .map(|(x, y, z)| (space.discretize(Vector3::<f64>::new(x, y, z)).unwrap(), 0)),
         );
 
         assert_eq!(octree.iter().count(), 5000);
