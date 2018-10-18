@@ -1,4 +1,4 @@
-#![feature(box_syntax, box_patterns, tool_lints)]
+#![feature(box_syntax, box_patterns)]
 
 pub mod octree;
 
