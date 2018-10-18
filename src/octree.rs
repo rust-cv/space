@@ -9,12 +9,12 @@ pub use self::pointer::Pointer;
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
-pub trait Gatherer<Item, N> {
+pub trait Gatherer<Item, M> {
         type Sum;
         fn gather<'a, I>(&self, it: I) -> Self::Sum
         where
                 Item: 'a,
-                I: Iterator<Item = (Morton<N>, &'a Item)>;
+                I: Iterator<Item = (M, &'a Item)>;
 }
 
 pub trait Folder {
