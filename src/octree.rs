@@ -24,10 +24,11 @@ pub trait Folder {
         I: Iterator<Item = Self::Sum>;
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct LeveledRegion(pub i32);
 
 impl LeveledRegion {
-    pub fn discretize<S, M>(&self, point: Vector3<S>) -> Option<M>
+    pub fn discretize<S, M>(self, point: Vector3<S>) -> Option<M>
     where
         S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
         M: Morton + std::fmt::Debug + 'static,
