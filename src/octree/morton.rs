@@ -112,11 +112,11 @@ impl Morton for u128 {
     #[inline]
     #[allow(clippy::cast_lossless)]
     fn encode(x: Self, y: Self, z: Self) -> u128 {
-        let highx = x >> 21;
+        let highx = (x >> 21) & ((1 << 21) - 1);
         let lowx = x & ((1 << 21) - 1);
-        let highy = y >> 21;
+        let highy = (y >> 21) & ((1 << 21) - 1);
         let lowy = y & ((1 << 21) - 1);
-        let highz = z >> 21;
+        let highz = (z >> 21) & ((1 << 21) - 1);
         let lowz = z & ((1 << 21) - 1);
         let high = morton::encode_3d(highx as u64, highy as u64, highz as u64);
         let low = morton::encode_3d(lowx as u64, lowy as u64, lowz as u64);
