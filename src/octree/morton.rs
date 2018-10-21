@@ -9,8 +9,8 @@ use std::hash::{Hash, Hasher};
 pub trait Morton: PrimInt + FromPrimitive + ToPrimitive {
     const BITS: usize;
 
-    pub fn encode(x: Self, y: Self, z: Self) -> Self;
-    pub fn decode(self) -> (Self, Self, Self);
+    fn encode(x: Self, y: Self, z: Self) -> Self;
+    fn decode(self) -> (Self, Self, Self);
 
     #[inline]
     fn dim_bits() -> usize {
