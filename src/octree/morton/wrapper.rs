@@ -3,7 +3,7 @@ use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MortonWrapper<M>(pub M);
 
 impl<M> Default for MortonWrapper<M>

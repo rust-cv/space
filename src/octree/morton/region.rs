@@ -57,7 +57,11 @@ where
     /// the unused bits to store the level information via shifting.
     #[inline]
     pub(crate) fn canonicalize(&self) -> M {
-        (self.morton | M::unused_bits()).get_significant_bits(self.level - 1)
+        if self.level == 0 {
+            M::zero()
+        } else {
+            (self.morton | M::unused_bits()).get_significant_bits(self.level - 1)
+        }
     }
 }
 
@@ -141,9 +145,7 @@ where
     where
         H: Hasher,
     {
-        if self.level != 0 {
-            self.canonicalize().hash(state);
-        }
+        self.canonicalize().hash(state);
     }
 }
 
