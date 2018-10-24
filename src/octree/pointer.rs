@@ -5,12 +5,6 @@ use itertools::Itertools;
 
 use std::default::Default;
 
-#[allow(type_alias_bounds)]
-type CacheGatherIter<'a, T, M, F, G: Gatherer<T, M>> = either::Either<
-    MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>,
-    std::iter::Once<(MortonRegion<M>, &'a mut G::Sum)>,
->;
-
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 pub struct Pointer<T, M> {
     tree: MortonOctree<T, M>,
@@ -121,11 +115,12 @@ where
         &'a self,
         further: F,
         gatherer: G,
-        cache: &'a mut MortonRegionMap<G::Sum, M>,
-    ) -> CacheGatherIter<'a, T, M, F, G>
+        cache: MortonRegionCache<G::Sum, M>,
+    ) -> PointerFurtherGatherCacheIter<'a, T, M, F, G>
     where
         F: FnMut(MortonRegion<M>) -> bool + 'a,
         G: Gatherer<T, M> + 'a,
+        G::Sum: Clone,
     {
         self.tree.iter_gather_cached(further, gatherer, cache)
     }
@@ -239,44 +234,43 @@ where
         &'a self,
         mut further: F,
         gatherer: G,
-        cache: &'a mut MortonRegionMap<G::Sum, M>,
-    ) -> CacheGatherIter<'a, T, M, F, G>
+        mut cache: MortonRegionCache<G::Sum, M>,
+    ) -> PointerFurtherGatherCacheIter<'a, T, M, F, G>
     where
         F: FnMut(MortonRegion<M>) -> bool + 'a,
         G: Gatherer<T, M> + 'a,
+        G::Sum: Clone,
     {
-        use either::Either::*;
         let base_region = MortonRegion::default();
         match self {
             MortonOctree::Node(box ref n) => {
                 if further(base_region) {
-                    Left(MortonOctreeFurtherGatherCacheIter::new(
+                    PointerFurtherGatherCacheIter::Deep(MortonOctreeFurtherGatherCacheIter::new(
                         vec![(n, base_region.enter(0))],
                         further,
                         gatherer,
                         cache,
                     ))
                 } else {
-                    Right(std::iter::once((
-                        base_region,
-                        cache
-                            .entry(base_region)
-                            .or_insert_with(|| gatherer.gather(n.iter().flat_map(|c| c.iter()))),
-                    )))
+                    let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
+                        let item = gatherer.gather(n.iter().flat_map(|c| c.iter()));
+                        cache.insert(base_region, item.clone());
+                        item
+                    });
+                    PointerFurtherGatherCacheIter::Shallow(Some((base_region, item)), cache)
                 }
             }
-            MortonOctree::Leaf(ref items, morton) => Right(std::iter::once((
-                base_region,
-                cache
-                    .entry(base_region)
-                    .or_insert_with(|| gatherer.gather(items.iter().map(|i| (*morton, i)))),
-            ))),
-            MortonOctree::None => Left(MortonOctreeFurtherGatherCacheIter::new(
-                vec![],
-                further,
-                gatherer,
-                cache,
-            )),
+            MortonOctree::Leaf(ref items, morton) => {
+                let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
+                    let item = gatherer.gather(items.iter().map(|i| (*morton, i)));
+                    cache.insert(base_region, item.clone());
+                    item
+                });
+                PointerFurtherGatherCacheIter::Shallow(Some((base_region, item)), cache)
+            }
+            MortonOctree::None => PointerFurtherGatherCacheIter::Deep(
+                MortonOctreeFurtherGatherCacheIter::new(vec![], further, gatherer, cache),
+            ),
         }
     }
 
@@ -502,28 +496,75 @@ where
     }
 }
 
+pub enum PointerFurtherGatherCacheIter<'a, T, M, F, G>
+where
+    G: Gatherer<T, M>,
+    M: Morton,
+{
+    Deep(MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>),
+    Shallow(
+        Option<(MortonRegion<M>, G::Sum)>,
+        MortonRegionCache<G::Sum, M>,
+    ),
+}
+
+impl<'a, T, M, F, G> PointerFurtherGatherCacheIter<'a, T, M, F, G>
+where
+    G: Gatherer<T, M>,
+    M: Morton,
+{
+    pub fn into_cache(self) -> MortonRegionCache<G::Sum, M> {
+        use self::PointerFurtherGatherCacheIter::*;
+        match self {
+            Deep(d) => d.into_cache(),
+            Shallow(_, cache) => cache,
+        }
+    }
+}
+
+impl<'a, T, M, F, G> Iterator for PointerFurtherGatherCacheIter<'a, T, M, F, G>
+where
+    M: Morton,
+    F: FnMut(MortonRegion<M>) -> bool,
+    G: Gatherer<T, M>,
+    G::Sum: Clone,
+{
+    type Item = (MortonRegion<M>, G::Sum);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        use self::PointerFurtherGatherCacheIter::*;
+        match self {
+            Deep(d) => d.next(),
+            Shallow(s, _) => s.take(),
+        }
+    }
+}
+
 type MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, M> =
     Vec<(&'a [MortonOctree<T, M>; 8], MortonRegion<M>)>;
 
 pub struct MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
 where
     G: Gatherer<T, M>,
+    M: Morton,
 {
     nodes: MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, M>,
     further: F,
     gatherer: G,
-    cache: &'a mut MortonRegionMap<G::Sum, M>,
+    cache: MortonRegionCache<G::Sum, M>,
 }
 
 impl<'a, T, M, F, G> MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
 where
     G: Gatherer<T, M>,
+    M: Morton,
 {
     fn new(
         nodes: MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, M>,
         further: F,
         gatherer: G,
-        cache: &'a mut MortonRegionMap<G::Sum, M>,
+        cache: MortonRegionCache<G::Sum, M>,
     ) -> Self {
         MortonOctreeFurtherGatherCacheIter {
             nodes,
@@ -532,20 +573,20 @@ where
             cache,
         }
     }
+
+    pub fn into_cache(self) -> MortonRegionCache<G::Sum, M> {
+        self.cache
+    }
 }
 
-/// The reason `Iterator` is only implemented for `&'a mut` is because the returned reference cannot live beyond
-/// the next call to `next()`. If it does, then the cache the iterator is borrowing could potentially reallocate
-/// and cause a use-after-free. Some unsafe code exists in this implementation that assumes this soundness.
-/// This implementation cannot be written soundly in a way that allows multiple items from `next()` to
-/// exist simultaneously without changing the method of caching.
-impl<'a, T, M, F, G> Iterator for &'a mut MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
+impl<'a, T, M, F, G> Iterator for MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
 where
     M: Morton,
     F: FnMut(MortonRegion<M>) -> bool,
     G: Gatherer<T, M>,
+    G::Sum: Clone,
 {
-    type Item = (MortonRegion<M>, &'a mut G::Sum);
+    type Item = (MortonRegion<M>, G::Sum);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -555,31 +596,27 @@ where
                 self.nodes.push((node, next));
             }
 
-            // NOTE: This unsafe code is thought to be sound. By making the lifetime of the returned
-            // G::Sum tied to the iterator, it is thought that the cache it is in cannot be mutated and
-            // cause a potential data race.
-            let cache: &'a mut MortonRegionMap<G::Sum, M> = unsafe { &mut *(self.cache as *mut _) };
-
             match node[region.get()] {
                 MortonOctree::Node(ref children) => {
                     if (self.further)(region) {
                         self.nodes.push((children, region.enter(0)));
                     } else {
-                        return Some((
-                            region,
-                            cache.entry(region).or_insert_with(|| {
-                                self.gatherer.gather(children.iter().flat_map(|c| c.iter()))
-                            }),
-                        ));
+                        let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
+                            let item = self.gatherer.gather(children.iter().flat_map(|c| c.iter()));
+                            self.cache.insert(region, item.clone());
+                            item
+                        });
+                        return Some((region, item));
                     }
                 }
                 MortonOctree::Leaf(ref items, morton) => {
-                    return Some((
-                        region,
-                        cache.entry(region).or_insert_with(|| {
-                            self.gatherer.gather(items.iter().map(|i| (morton, i)))
-                        }),
-                    ));
+                    let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
+                        let item = self.gatherer.gather(items.iter().map(|i| (morton, i)));
+                        self.cache.insert(region, item.clone());
+                        item
+                    });
+
+                    return Some((region, item));
                 }
                 _ => {}
             }

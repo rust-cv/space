@@ -13,12 +13,12 @@ edition = "2018"
 [dependencies]
 nalgebra = "0.16.3"
 num = "0.2.0"
-derive_more = "0.12.0"
 itertools = "0.7.8"
 either = "1.5.0"
 bitwise = "0.1.1"
 smallvec = "0.6.5"
 fnv = "1.0.6"
+lru-cache = "0.1.1"
 
 [dev-dependencies]
 rand = "0.5.5"

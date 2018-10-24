@@ -73,11 +73,6 @@ where
     fn eq(&self, other: &Self) -> bool {
         self.canonicalize().eq(&other.canonicalize())
     }
-
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        self.canonicalize().ne(&other.canonicalize())
-    }
 }
 
 impl<M> Eq for MortonRegion<M> where M: Morton {}

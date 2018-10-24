@@ -30,7 +30,7 @@ where
 
 impl<T, M> Linear<T, M>
 where
-    M: Morton + Default,
+    M: Morton,
 {
     pub fn new() -> Self {
         Default::default()
