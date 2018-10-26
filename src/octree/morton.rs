@@ -9,7 +9,6 @@ use bitwise::morton;
 use num::{FromPrimitive, PrimInt, ToPrimitive};
 use std::hash::{Hash, Hasher};
 
-// I tried BTreeMap and its worse in every way, so don't bother.
 pub type MortonRegionMap<T, M> = std::collections::HashMap<MortonRegion<M>, T, MortonBuildHasher>;
 pub type MortonRegionSet<M> = std::collections::HashSet<MortonRegion<M>, MortonBuildHasher>;
 pub type MortonMap<T, M> = std::collections::HashMap<MortonWrapper<M>, T, MortonBuildHasher>;
