@@ -508,12 +508,13 @@ where
     ),
 }
 
-impl<'a, T, M, F, G> PointerFurtherGatherCacheIter<'a, T, M, F, G>
+impl<'a, T, M, F, G> Into<MortonRegionCache<G::Sum, M>>
+    for PointerFurtherGatherCacheIter<'a, T, M, F, G>
 where
     G: Gatherer<T, M>,
     M: Morton,
 {
-    pub fn into_cache(self) -> MortonRegionCache<G::Sum, M> {
+    fn into(self) -> MortonRegionCache<G::Sum, M> {
         use self::PointerFurtherGatherCacheIter::*;
         match self {
             Deep(d) => d.into_cache(),
