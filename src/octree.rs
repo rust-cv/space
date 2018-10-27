@@ -11,6 +11,8 @@ use num::{Float, FromPrimitive, ToPrimitive};
 
 pub trait Gatherer<Item, M> {
     type Sum;
+
+    /// `gather` is allowed to assume the `it` gives at least one item.
     fn gather<'a, I>(&self, it: I) -> Self::Sum
     where
         Item: 'a,
@@ -19,6 +21,7 @@ pub trait Gatherer<Item, M> {
 
 pub trait Folder {
     type Sum;
+    /// `sum` is allowed to assume the `it` gives at least one item.
     fn sum<I>(&self, it: I) -> Option<Self::Sum>
     where
         I: Iterator<Item = Self::Sum>;

@@ -3,7 +3,9 @@ use crate::octree::*;
 
 use itertools::Itertools;
 
+use rand::Rng;
 use std::default::Default;
+use std::iter::repeat_with;
 
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 pub struct Pointer<T, M> {
@@ -95,8 +97,25 @@ where
         }
     }
 
+    /// Iterate over all octree nodes and their morton codes.
     pub fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         self.tree.iter()
+    }
+
+    /// Iterate over all octree nodes, but stop at `depth` to randomly sample a point.
+    ///
+    /// If `depth` is set to `0`, only one point will be returned, which will either be the only point or
+    /// a random sampling (over space, not points) at the node at this point. If a `depth` of `1` is used,
+    /// it will traverse down by one level and do `8` random samples at that octree level. This will give back
+    /// an iterator of no more than `8` spots.
+    ///
+    /// This will give back precisely `8^depth` items.
+    fn iter_rand<'a, R: Rng>(
+        &'a self,
+        depth: usize,
+        rng: &'a mut R,
+    ) -> impl Iterator<Item = (M, &T)> + 'a {
+        self.tree.iter_rand(depth, rng)
     }
 
     pub fn iter_gather<'a, F, G>(
@@ -123,6 +142,24 @@ where
         G::Sum: Clone,
     {
         self.tree.iter_gather_cached(further, gatherer, cache)
+    }
+
+    pub fn iter_gather_random_cached<'a, F, G, R>(
+        &'a self,
+        depth: usize,
+        further: F,
+        gatherer: G,
+        rng: &'a mut R,
+        cache: MortonRegionCache<G::Sum, M>,
+    ) -> PointerFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+    where
+        R: Rng,
+        F: FnMut(MortonRegion<M>) -> bool + 'a,
+        G: Gatherer<T, M> + 'a,
+        G::Sum: Clone,
+    {
+        self.tree
+            .iter_gather_random_cached(depth, further, gatherer, rng, cache)
     }
 
     /// This gathers the tree into a linear hashed octree map.
@@ -189,6 +226,35 @@ where
                 Right(item.iter().map(move |item| (*morton, item)))
             }
             MortonOctree::None => Left(MortonOctreeIter::new(vec![])),
+        }
+    }
+
+    fn iter_rand<'a, R: Rng>(
+        &'a self,
+        depth: usize,
+        rng: &'a mut R,
+    ) -> impl Iterator<Item = (M, &T)> + 'a {
+        use either::Either::*;
+        match self {
+            MortonOctree::Node(box ref children) => {
+                if depth == 0 {
+                    let mut choice = rng.gen_range(0, 8);
+                    // Iterate until we find the first non-empty spot.
+                    // This technically results in not completely random behavior
+                    // since an octant that comes after more empty octants is more likely to be chosen.
+                    while let MortonOctree::None = children[choice] {
+                        choice += 1;
+                        choice %= 8;
+                    }
+                    Left({ MortonOctreeRandIter::new(vec![(children, choice, 1)], depth, rng) })
+                } else {
+                    Left({ MortonOctreeRandIter::new(vec![(children, 0, 1)], depth, rng) })
+                }
+            }
+            MortonOctree::Leaf(ref item, morton) => {
+                Right(item.iter().map(move |item| (*morton, item)))
+            }
+            MortonOctree::None => Left(MortonOctreeRandIter::new(vec![], depth, rng)),
         }
     }
 
@@ -270,6 +336,89 @@ where
             }
             MortonOctree::None => PointerFurtherGatherCacheIter::Deep(
                 MortonOctreeFurtherGatherCacheIter::new(vec![], further, gatherer, cache),
+            ),
+        }
+    }
+
+    pub fn iter_gather_random_cached<'a, F, G, R>(
+        &'a self,
+        depth: usize,
+        mut further: F,
+        gatherer: G,
+        rng: &'a mut R,
+        mut cache: MortonRegionCache<G::Sum, M>,
+    ) -> PointerFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+    where
+        R: Rng,
+        F: FnMut(MortonRegion<M>) -> bool + 'a,
+        G: Gatherer<T, M> + 'a,
+        G::Sum: Clone,
+    {
+        let base_region = MortonRegion::default();
+        match self {
+            MortonOctree::Node(box ref n) => {
+                if depth == 0 || !further(base_region) {
+                    // If we reach the depth we want or `further` is false, then we must start the random sampling.
+                    let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
+                        let item = gatherer.gather(MortonOctreeRandIter::new(
+                            vec![(
+                                n,
+                                if depth == 1 {
+                                    let mut choice = rng.gen_range(0, 8);
+                                    // Iterate until we find the first non-empty spot.
+                                    // This technically results in not completely random behavior
+                                    // since an octant that comes after more empty octants is more likely to be chosen.
+                                    while let MortonOctree::None = n[choice] {
+                                        choice += 1;
+                                        choice %= 8;
+                                    }
+                                    choice
+                                } else {
+                                    0
+                                },
+                                1,
+                            )],
+                            depth,
+                            rng,
+                        ));
+                        cache.insert(base_region, item.clone());
+                        item
+                    });
+
+                    PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
+                } else {
+                    PointerFurtherGatherRandomCacheIter::Deep(
+                        MortonOctreeFurtherGatherRandomCacheIter::new(
+                            vec![(n, base_region.enter(0))],
+                            further,
+                            gatherer,
+                            depth,
+                            rng,
+                            cache,
+                        ),
+                    )
+                }
+            }
+            MortonOctree::Leaf(ref items, morton) => {
+                let total_samples = 8usize.pow(depth as u32);
+                let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
+                    let item = gatherer.gather(repeat_with(|| rng.choose(items))
+                        .take(total_samples)
+                        .map(|item| (*morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),);
+                    cache.insert(base_region, item.clone());
+                    item
+                });
+                PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
+            }
+            MortonOctree::None => PointerFurtherGatherRandomCacheIter::Deep(
+                MortonOctreeFurtherGatherRandomCacheIter::new(
+                    vec![],
+                    further,
+                    gatherer,
+                    depth,
+                    rng,
+                    cache,
+                ),
             ),
         }
     }
@@ -430,6 +579,100 @@ where
                 }
                 None
             })
+    }
+}
+
+type NodeIndexLevel<'a, T, M> = (&'a [MortonOctree<T, M>; 8], usize, usize);
+
+struct MortonOctreeRandIter<'a, T, M, R> {
+    nodes: Vec<NodeIndexLevel<'a, T, M>>,
+    slice: &'a [T],
+    slice_remaining_samples: usize,
+    slice_morton: M,
+    depth: usize,
+    rng: &'a mut R,
+}
+
+impl<'a, T, M, R> MortonOctreeRandIter<'a, T, M, R>
+where
+    M: Morton,
+    R: Rng,
+{
+    fn new(nodes: Vec<NodeIndexLevel<'a, T, M>>, depth: usize, rng: &'a mut R) -> Self {
+        MortonOctreeRandIter {
+            nodes,
+            slice: &[],
+            slice_remaining_samples: 0,
+            slice_morton: M::zero(),
+            depth,
+            rng,
+        }
+    }
+}
+
+impl<'a, T, M, R> Iterator for MortonOctreeRandIter<'a, T, M, R>
+where
+    M: Morton,
+    R: Rng,
+{
+    type Item = (M, &'a T);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.slice_remaining_samples != 0 {
+            self.slice_remaining_samples -= 1;
+            Some((
+                self.slice_morton,
+                self.rng
+                    .choose(self.slice)
+                    .expect("shouldn't ever have empty slice"),
+            ))
+        } else {
+            while let Some((node, ix, level)) = self.nodes.pop() {
+                if level < self.depth && ix != 7 {
+                    self.nodes.push((node, ix + 1, level));
+                }
+                match node[ix] {
+                    MortonOctree::Node(ref children) => self.nodes.push((
+                        children,
+                        if level >= self.depth {
+                            let mut choice = self.rng.gen_range(0, 8);
+                            // Iterate until we find the first non-empty spot.
+                            // This technically results in not completely random behavior
+                            // since an octant that comes after more empty octants is more likely to be chosen.
+                            while let MortonOctree::None = children[choice] {
+                                choice += 1;
+                                choice %= 8;
+                            }
+                            choice
+                        } else {
+                            0
+                        },
+                        level + 1,
+                    )),
+                    MortonOctree::Leaf(ref item, morton) => {
+                        self.slice = &item;
+                        self.slice_morton = morton;
+                        if level < self.depth {
+                            // If level is less than depth then we need to randomly sample the vec
+                            // a number of times equivalent to how many times we would sample
+                            // if we were to traverse deeper.
+                            self.slice_remaining_samples =
+                                8usize.pow((self.depth - level) as u32) - 1
+                        };
+                        // Randomly sample the vec once.
+                        return Some((
+                            morton,
+                            self.rng
+                                .choose(self.slice)
+                                .expect("shouldn't ever have empty slice"),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
     }
 }
 
@@ -620,6 +863,172 @@ where
                     return Some((region, item));
                 }
                 _ => {}
+            }
+        }
+        None
+    }
+}
+
+pub enum PointerFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+where
+    G: Gatherer<T, M>,
+    R: Rng,
+    M: Morton,
+{
+    Deep(MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>),
+    Shallow(
+        Option<(MortonRegion<M>, G::Sum)>,
+        MortonRegionCache<G::Sum, M>,
+    ),
+}
+
+impl<'a, T, M, F, G, R> Into<MortonRegionCache<G::Sum, M>>
+    for PointerFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+where
+    G: Gatherer<T, M>,
+    R: Rng,
+    M: Morton,
+{
+    fn into(self) -> MortonRegionCache<G::Sum, M> {
+        use self::PointerFurtherGatherRandomCacheIter::*;
+        match self {
+            Deep(d) => d.into_cache(),
+            Shallow(_, cache) => cache,
+        }
+    }
+}
+
+impl<'a, T, M, F, G, R> Iterator for PointerFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+where
+    M: Morton,
+    R: Rng,
+    F: FnMut(MortonRegion<M>) -> bool,
+    G: Gatherer<T, M>,
+    G::Sum: Clone,
+{
+    type Item = (MortonRegion<M>, G::Sum);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        use self::PointerFurtherGatherRandomCacheIter::*;
+        match self {
+            Deep(d) => d.next(),
+            Shallow(s, _) => s.take(),
+        }
+    }
+}
+
+type MortonOctreeFurtherGatherRandomCacheIterNodeStack<'a, T, M> =
+    Vec<(&'a [MortonOctree<T, M>; 8], MortonRegion<M>)>;
+
+pub struct MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+where
+    G: Gatherer<T, M>,
+    R: Rng,
+    M: Morton,
+{
+    nodes: MortonOctreeFurtherGatherRandomCacheIterNodeStack<'a, T, M>,
+    further: F,
+    gatherer: G,
+    depth: usize,
+    rng: &'a mut R,
+    cache: MortonRegionCache<G::Sum, M>,
+}
+
+impl<'a, T, M, F, G, R> MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+where
+    G: Gatherer<T, M>,
+    R: Rng,
+    M: Morton,
+{
+    fn new(
+        nodes: MortonOctreeFurtherGatherRandomCacheIterNodeStack<'a, T, M>,
+        further: F,
+        gatherer: G,
+        depth: usize,
+        rng: &'a mut R,
+        cache: MortonRegionCache<G::Sum, M>,
+    ) -> Self {
+        MortonOctreeFurtherGatherRandomCacheIter {
+            nodes,
+            further,
+            gatherer,
+            depth,
+            rng,
+            cache,
+        }
+    }
+
+    pub fn into_cache(self) -> MortonRegionCache<G::Sum, M> {
+        self.cache
+    }
+}
+
+impl<'a, T, M, F, G, R> Iterator for MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+where
+    M: Morton,
+    F: FnMut(MortonRegion<M>) -> bool,
+    G: Gatherer<T, M>,
+    G::Sum: Clone,
+    R: Rng,
+{
+    type Item = (MortonRegion<M>, G::Sum);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((node, region)) = self.nodes.pop() {
+            // Then update the region for the next iteration.
+            if let Some(next) = region.next() {
+                self.nodes.push((node, next));
+            }
+
+            // If we shouldn't go further into the region, then its time to do a random sample starting here.
+            if !(self.further)(region) {
+                // If we reach the depth we want or `further` is false, then we must start the random sampling.
+                return self
+                    .cache
+                    .get_mut(&region)
+                    .cloned()
+                    .or_else(|| {
+                        // We have to make sure this node is not None or else we can't gather it.
+                        // This is because `gather` must be guaranteed that its not passed an empty iterator.
+                        if let MortonOctree::None = node[region.get()] {
+                            None
+                        } else {
+                            Some(&node[region.get()])
+                        }
+                        .map(|n| {
+                            let item = self.gatherer.gather(n.iter_rand(self.depth, self.rng));
+                            self.cache.insert(region, item.clone());
+                            item
+                        })
+                    })
+                    .map(|item| (region, item));
+            } else {
+                match node[region.get()] {
+                    MortonOctree::Node(ref children) => {
+                        // Traverse deeper (we already checked if we didn't need to go further).
+                        self.nodes.push((children, region.enter(0)));
+                    }
+                    MortonOctree::Leaf(ref items, morton) => {
+                        // We reached a leaf, so we have to sample regardless of if we should go further or not.
+                        // This always samples the leaf as if we should have stopped on it.
+                        let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
+                        let total_samples = 8usize.pow(self.depth as u32);
+                        let rng = &mut self.rng;
+                        let item = self.gatherer.gather(
+                            repeat_with(|| rng.choose(items))
+                                .take(total_samples)
+                                .map(|item| (morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),
+                        );
+                        self.cache.insert(region, item.clone());
+                        item
+                    });
+
+                        return Some((region, item));
+                    }
+                    _ => {}
+                }
             }
         }
         None
