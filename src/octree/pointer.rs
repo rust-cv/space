@@ -7,6 +7,8 @@ use rand::Rng;
 use std::default::Default;
 use std::iter::repeat_with;
 
+use log::*;
+
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 pub struct Pointer<T, M> {
     tree: MortonOctree<T, M>,
@@ -355,38 +357,34 @@ where
         G::Sum: Clone,
     {
         let base_region = MortonRegion::default();
-        match self {
-            MortonOctree::Node(box ref n) => {
-                if depth == 0 || !further(base_region) {
-                    // If we reach the depth we want or `further` is false, then we must start the random sampling.
-                    let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
-                        let item = gatherer.gather(MortonOctreeRandIter::new(
-                            vec![(
-                                n,
-                                if depth == 1 {
-                                    let mut choice = rng.gen_range(0, 8);
-                                    // Iterate until we find the first non-empty spot.
-                                    // This technically results in not completely random behavior
-                                    // since an octant that comes after more empty octants is more likely to be chosen.
-                                    while let MortonOctree::None = n[choice] {
-                                        choice += 1;
-                                        choice %= 8;
-                                    }
-                                    choice
-                                } else {
-                                    0
-                                },
-                                1,
-                            )],
-                            depth,
-                            rng,
-                        ));
-                        cache.insert(base_region, item.clone());
-                        item
-                    });
-
-                    PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
-                } else {
+        if !further(base_region) {
+            trace!("chose shallow due to further");
+            // If we reach the depth we want or `further` is false, then we must start the random sampling.
+            PointerFurtherGatherRandomCacheIter::Shallow(
+                cache
+                    .get_mut(&base_region)
+                    .cloned()
+                    .or_else(|| {
+                        // We have to make sure this node is not None or else we can't gather it.
+                        // This is because `gather` must be guaranteed that its not passed an empty iterator.
+                        if let MortonOctree::None = self {
+                            None
+                        } else {
+                            Some(self)
+                        }
+                        .map(|n| {
+                            let item = gatherer.gather(n.iter_rand(depth, rng));
+                            cache.insert(base_region, item.clone());
+                            item
+                        })
+                    })
+                    .map(|item| (base_region, item)),
+                cache,
+            )
+        } else {
+            match self {
+                MortonOctree::Node(box ref n) => {
+                    trace!("chose deep due to node");
                     PointerFurtherGatherRandomCacheIter::Deep(
                         MortonOctreeFurtherGatherRandomCacheIter::new(
                             vec![(n, base_region.enter(0))],
@@ -398,28 +396,32 @@ where
                         ),
                     )
                 }
-            }
-            MortonOctree::Leaf(ref items, morton) => {
-                let total_samples = 8usize.pow(depth as u32);
-                let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
+                MortonOctree::Leaf(ref items, morton) => {
+                    trace!("chose shallow due to leaf");
+                    let total_samples = 8usize.pow(depth as u32);
+                    let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
                     let item = gatherer.gather(repeat_with(|| rng.choose(items))
                         .take(total_samples)
                         .map(|item| (*morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),);
                     cache.insert(base_region, item.clone());
                     item
                 });
-                PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
+                    PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
+                }
+                MortonOctree::None => {
+                    trace!("chose empty deep due to None");
+                    PointerFurtherGatherRandomCacheIter::Deep(
+                        MortonOctreeFurtherGatherRandomCacheIter::new(
+                            vec![],
+                            further,
+                            gatherer,
+                            depth,
+                            rng,
+                            cache,
+                        ),
+                    )
+                }
             }
-            MortonOctree::None => PointerFurtherGatherRandomCacheIter::Deep(
-                MortonOctreeFurtherGatherRandomCacheIter::new(
-                    vec![],
-                    further,
-                    gatherer,
-                    depth,
-                    rng,
-                    cache,
-                ),
-            ),
         }
     }
 
@@ -629,7 +631,7 @@ where
             ))
         } else {
             while let Some((node, ix, level)) = self.nodes.pop() {
-                if level < self.depth && ix != 7 {
+                if level <= self.depth && ix != 7 {
                     self.nodes.push((node, ix + 1, level));
                 }
                 match node[ix] {
@@ -984,8 +986,9 @@ where
 
             // If we shouldn't go further into the region, then its time to do a random sample starting here.
             if !(self.further)(region) {
+                trace!("chose not to go further");
                 // If we reach the depth we want or `further` is false, then we must start the random sampling.
-                return self
+                if let Some(r) = self
                     .cache
                     .get_mut(&region)
                     .cloned()
@@ -1003,27 +1006,32 @@ where
                             item
                         })
                     })
-                    .map(|item| (region, item));
+                    .map(|item| (region, item))
+                {
+                    return Some(r);
+                }
             } else {
                 match node[region.get()] {
                     MortonOctree::Node(ref children) => {
+                        trace!("traversing deeper due to node at level {}", region.level);
                         // Traverse deeper (we already checked if we didn't need to go further).
                         self.nodes.push((children, region.enter(0)));
                     }
                     MortonOctree::Leaf(ref items, morton) => {
+                        trace!("stopping due to leaf at level {}", region.level);
                         // We reached a leaf, so we have to sample regardless of if we should go further or not.
                         // This always samples the leaf as if we should have stopped on it.
                         let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
-                        let total_samples = 8usize.pow(self.depth as u32);
-                        let rng = &mut self.rng;
-                        let item = self.gatherer.gather(
-                            repeat_with(|| rng.choose(items))
-                                .take(total_samples)
-                                .map(|item| (morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),
-                        );
-                        self.cache.insert(region, item.clone());
-                        item
-                    });
+                            let total_samples = 8usize.pow(self.depth as u32);
+                            let rng = &mut self.rng;
+                            let item = self.gatherer.gather(
+                                repeat_with(|| rng.choose(items))
+                                    .take(total_samples)
+                                    .map(|item| (morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),
+                            );
+                            self.cache.insert(region, item.clone());
+                            item
+                        });
 
                         return Some((region, item));
                     }
