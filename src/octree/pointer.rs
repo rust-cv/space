@@ -4,6 +4,7 @@ use crate::octree::*;
 use itertools::Itertools;
 
 use rand::Rng;
+use smallvec::{smallvec, SmallVec};
 use std::default::Default;
 use std::iter::repeat_with;
 
@@ -60,7 +61,7 @@ where
             }
             MortonOctree::None => {
                 // Simply add a new leaf.
-                *tree_part = MortonOctree::Leaf(vec![item], morton);
+                *tree_part = MortonOctree::Leaf(smallvec![item], morton);
                 return;
             }
             _ => {
@@ -85,7 +86,7 @@ where
                         building_node = &mut children[morton.get_level(i)];
                     } else {
                         // We reached the end where they differ, so put them both into the node.
-                        children[morton.get_level(i)] = MortonOctree::Leaf(vec![item], morton);
+                        children[morton.get_level(i)] = MortonOctree::Leaf(smallvec![item], morton);
                         children[dest_morton.get_level(i)] =
                             MortonOctree::Leaf(dest_vec, dest_morton);
                         return;
@@ -212,7 +213,7 @@ where
 #[derive(Clone, Debug)]
 enum MortonOctree<T, M> {
     Node(Box<[MortonOctree<T, M>; 8]>),
-    Leaf(Vec<T>, M),
+    Leaf(SmallVec<[T; 1]>, M),
     None,
 }
 
