@@ -591,6 +591,7 @@ struct MortonOctreeRandIter<'a, T, M, R> {
     slice: &'a [T],
     slice_remaining_samples: usize,
     slice_morton: M,
+    slice_random_sample: bool,
     depth: usize,
     rng: &'a mut R,
 }
@@ -606,6 +607,7 @@ where
             slice: &[],
             slice_remaining_samples: 0,
             slice_morton: M::zero(),
+            slice_random_sample: false,
             depth,
             rng,
         }
@@ -623,12 +625,19 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         if self.slice_remaining_samples != 0 {
             self.slice_remaining_samples -= 1;
-            Some((
-                self.slice_morton,
-                self.rng
-                    .choose(self.slice)
-                    .expect("shouldn't ever have empty slice"),
-            ))
+            if self.slice_random_sample {
+                Some((
+                    self.slice_morton,
+                    self.rng
+                        .choose(self.slice)
+                        .expect("shouldn't ever have empty slice"),
+                ))
+            } else if let Some((item, slice)) = self.slice.split_first() {
+                self.slice = slice;
+                Some((self.slice_morton, item))
+            } else {
+                unreachable!()
+            }
         } else {
             while let Some((node, ix, level)) = self.nodes.pop() {
                 if level <= self.depth && ix != 7 {
@@ -660,7 +669,12 @@ where
                             // a number of times equivalent to how many times we would sample
                             // if we were to traverse deeper.
                             self.slice_remaining_samples =
-                                8usize.pow((self.depth - level) as u32) - 1
+                                8usize.pow((self.depth - level) as u32) - 1;
+
+                            // We also need to ensure that if the number of random samples exceeds the amount of items
+                            // that we just iterate instead of randomly sample.
+                            self.slice_random_sample =
+                                self.slice_remaining_samples < self.slice.len();
                         };
                         // Randomly sample the vec once.
                         return Some((
@@ -1024,11 +1038,13 @@ where
                         let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
                             let total_samples = 8usize.pow(self.depth as u32);
                             let rng = &mut self.rng;
-                            let item = self.gatherer.gather(
+                            let item = if total_samples > items.len() {self.gatherer.gather(
                                 repeat_with(|| rng.choose(items))
                                     .take(total_samples)
                                     .map(|item| (morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),
-                            );
+                            )} else {
+                                self.gatherer.gather(items.iter().map(|item| (morton, item)))
+                            };
                             self.cache.insert(region, item.clone());
                             item
                         });
