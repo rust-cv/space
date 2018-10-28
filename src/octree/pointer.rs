@@ -9,7 +9,7 @@ use std::iter::repeat_with;
 
 use log::*;
 
-/// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
+/// An octree that uses pointers for internal nodes.
 pub struct Pointer<T, M> {
     tree: MortonOctree<T, M>,
 }

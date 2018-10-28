@@ -20,7 +20,7 @@ smallvec = "0.6.5"
 fnv = "1.0.6"
 lru-cache = "0.1.1"
 rand = "0.5.5"
-log = "0.4.6"
+log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 
 [dev-dependencies]
 criterion = "0.2"
