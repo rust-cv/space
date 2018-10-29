@@ -20,14 +20,14 @@ where
     }
 
     #[inline]
-    pub(crate) fn enter(mut self, section: usize) -> Self {
+    pub fn enter(mut self, section: usize) -> Self {
         self.morton.set_level(self.level, section);
         self.level += 1;
         self
     }
 
     #[inline]
-    pub(crate) fn exit(&mut self) -> usize {
+    pub fn exit(&mut self) -> usize {
         self.level -= 1;
         let old = self.morton.get_level(self.level);
         self.morton.reset_level(self.level);
@@ -35,12 +35,12 @@ where
     }
 
     #[inline]
-    pub(crate) fn get(&self) -> usize {
+    pub fn get(&self) -> usize {
         self.morton.get_level(self.level - 1)
     }
 
     #[inline]
-    pub(crate) fn next(mut self) -> Option<Self> {
+    pub fn next(mut self) -> Option<Self> {
         if self.level == 0 {
             None
         } else {
@@ -56,7 +56,7 @@ where
     /// Produces a single number that has a canonically unique mapping to every given valid MortonRegion by using
     /// the unused bits to store the level information via shifting.
     #[inline]
-    pub(crate) fn canonicalize(&self) -> M {
+    pub fn canonicalize(&self) -> M {
         if self.level == 0 {
             M::zero()
         } else {
