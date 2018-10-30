@@ -111,8 +111,6 @@ where
     /// a random sampling (over space, not points) at the node at this point. If a `depth` of `1` is used,
     /// it will traverse down by one level and do `8` random samples at that octree level. This will give back
     /// an iterator of no more than `8` spots.
-    ///
-    /// This will give back precisely `8^depth` items.
     fn iter_rand<'a, R: Rng>(
         &'a self,
         depth: usize,
