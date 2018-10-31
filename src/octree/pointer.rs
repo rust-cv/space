@@ -8,15 +8,26 @@ use std::default::Default;
 
 use log::*;
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Oct<T> {
+    pub children: [T; 8],
+}
+
+impl<T> Oct<T> {
+    pub fn new(children: [T; 8]) -> Self {
+        Oct { children }
+    }
+}
+
 /// An octree that uses pointers for internal nodes.
 pub struct Pointer<T, M> {
-    tree: MortonOctree<T, M>,
+    tree: Internal<T, M>,
 }
 
 impl<T, M> Default for Pointer<T, M> {
     fn default() -> Self {
         Pointer {
-            tree: MortonOctree::default(),
+            tree: Internal::default(),
         }
     }
 }
@@ -37,19 +48,19 @@ where
             .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
                 use itertools::FoldWhile::{Continue, Done};
                 match node {
-                    MortonOctree::Node(ns) => {
+                    Internal::Node(box Oct { ref mut children }) => {
                         // The index into the array to access the next octree node
                         let subindex = morton.get_level(i);
-                        Continue((&mut ns[subindex], i))
+                        Continue((&mut children[subindex], i))
                     }
-                    MortonOctree::Leaf(_, _) => Done((node, old_ix)),
-                    MortonOctree::None => Done((node, old_ix)),
+                    Internal::Leaf(_, _) => Done((node, old_ix)),
+                    Internal::None => Done((node, old_ix)),
                 }
             })
             .into_inner();
 
         match tree_part {
-            MortonOctree::Leaf(ref mut leaf_item, dest_morton) => {
+            Internal::Leaf(ref mut leaf_item, dest_morton) => {
                 // If they have the same code then replace it.
                 if morton == *dest_morton {
                     *leaf_item = item;
@@ -57,9 +68,9 @@ where
                 }
                 // Otherwise we must split them, which we must do outside of this scope due to the borrow.
             }
-            MortonOctree::None => {
+            Internal::None => {
                 // Simply add a new leaf.
-                *tree_part = MortonOctree::Leaf(item, morton);
+                *tree_part = Internal::Leaf(item, morton);
                 return;
             }
             _ => {
@@ -69,24 +80,23 @@ where
             }
         }
 
-        let mut dest_old = MortonOctree::empty_node();
+        let mut dest_old = Internal::empty_node();
         std::mem::swap(&mut dest_old, tree_part);
 
-        if let MortonOctree::Leaf(dest_item, dest_morton) = dest_old {
+        if let Internal::Leaf(dest_item, dest_morton) = dest_old {
             // Set our initial reference to the default node in the dest.
             let mut building_node = tree_part;
             // Create deeper nodes till they differ at some level.
             for i in level + 1..M::dim_bits() {
                 // We know for sure that the dest is a node.
-                if let MortonOctree::Node(box ref mut children) = building_node {
+                if let Internal::Node(box Oct { ref mut children }) = building_node {
                     if morton.get_level(i) == dest_morton.get_level(i) {
-                        children[morton.get_level(i)] = MortonOctree::empty_node();
+                        children[morton.get_level(i)] = Internal::empty_node();
                         building_node = &mut children[morton.get_level(i)];
                     } else {
                         // We reached the end where they differ, so put them both into the node.
-                        children[morton.get_level(i)] = MortonOctree::Leaf(item, morton);
-                        children[dest_morton.get_level(i)] =
-                            MortonOctree::Leaf(dest_item, dest_morton);
+                        children[morton.get_level(i)] = Internal::Leaf(item, morton);
+                        children[dest_morton.get_level(i)] = Internal::Leaf(dest_item, dest_morton);
                         return;
                     }
                 } else {
@@ -205,24 +215,24 @@ where
     }
 }
 
-/// Tree with space implicitly divided based on a Morton code.
+/// Internal node of a pointer octree.
 #[derive(Clone, Debug)]
-enum MortonOctree<T, M> {
-    Node(Box<[MortonOctree<T, M>; 8]>),
+enum Internal<T, M> {
+    Node(Box<Oct<Internal<T, M>>>),
     Leaf(T, M),
     None,
 }
 
-impl<T, M> MortonOctree<T, M>
+impl<T, M> Internal<T, M>
 where
     M: Morton,
 {
     fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         use either::Either::*;
         match self {
-            MortonOctree::Node(box ref n) => Left(MortonOctreeIter::new(vec![(n, 0)])),
-            MortonOctree::Leaf(ref item, morton) => Right(std::iter::once((*morton, item))),
-            MortonOctree::None => Left(MortonOctreeIter::new(vec![])),
+            Internal::Node(box ref n) => Left(InternalIter::new(vec![(&n.children, 0)])),
+            Internal::Leaf(ref item, morton) => Right(std::iter::once((*morton, item))),
+            Internal::None => Left(InternalIter::new(vec![])),
         }
     }
 
@@ -233,23 +243,23 @@ where
     ) -> impl Iterator<Item = (M, &T)> + 'a {
         use either::Either::*;
         match self {
-            MortonOctree::Node(box ref children) => {
+            Internal::Node(box Oct { ref children }) => {
                 if depth == 0 {
                     let mut choice = rng.gen_range(0, 8);
                     // Iterate until we find the first non-empty spot.
                     // This technically results in not completely random behavior
                     // since an octant that comes after more empty octants is more likely to be chosen.
-                    while let MortonOctree::None = children[choice] {
+                    while let Internal::None = children[choice] {
                         choice += 1;
                         choice %= 8;
                     }
-                    Left({ MortonOctreeRandIter::new(vec![(children, choice, 1)], depth, rng) })
+                    Left({ InternalRandIter::new(vec![(children, choice, 1)], depth, rng) })
                 } else {
-                    Left({ MortonOctreeRandIter::new(vec![(children, 0, 1)], depth, rng) })
+                    Left({ InternalRandIter::new(vec![(children, 0, 1)], depth, rng) })
                 }
             }
-            MortonOctree::Leaf(ref item, morton) => Right(std::iter::once((*morton, item))),
-            MortonOctree::None => Left(MortonOctreeRandIter::new(vec![], depth, rng)),
+            Internal::Leaf(ref item, morton) => Right(std::iter::once((*morton, item))),
+            Internal::None => Left(InternalRandIter::new(vec![], depth, rng)),
         }
     }
 
@@ -265,29 +275,25 @@ where
         use either::Either::*;
         let base_region = MortonRegion::default();
         match self {
-            MortonOctree::Node(box ref n) => {
+            Internal::Node(box Oct { ref children }) => {
                 if further(base_region) {
-                    Left(MortonOctreeFurtherGatherIter::new(
-                        vec![(n, base_region.enter(0))],
+                    Left(InternalFurtherGatherIter::new(
+                        vec![(children, base_region.enter(0))],
                         further,
                         gatherer,
                     ))
                 } else {
                     Right(std::iter::once((
                         base_region,
-                        gatherer.gather(n.iter().flat_map(|c| c.iter())),
+                        gatherer.gather(children.iter().flat_map(|c| c.iter())),
                     )))
                 }
             }
-            MortonOctree::Leaf(ref item, morton) => Right(std::iter::once((
+            Internal::Leaf(ref item, morton) => Right(std::iter::once((
                 base_region,
                 gatherer.gather(std::iter::once((*morton, item))),
             ))),
-            MortonOctree::None => Left(MortonOctreeFurtherGatherIter::new(
-                vec![],
-                further,
-                gatherer,
-            )),
+            Internal::None => Left(InternalFurtherGatherIter::new(vec![], further, gatherer)),
         }
     }
 
@@ -304,24 +310,24 @@ where
     {
         let base_region = MortonRegion::default();
         match self {
-            MortonOctree::Node(box ref n) => {
+            Internal::Node(box Oct { ref children }) => {
                 if further(base_region) {
-                    PointerFurtherGatherCacheIter::Deep(MortonOctreeFurtherGatherCacheIter::new(
-                        vec![(n, base_region.enter(0))],
+                    PointerFurtherGatherCacheIter::Deep(InternalFurtherGatherCacheIter::new(
+                        vec![(children, base_region.enter(0))],
                         further,
                         gatherer,
                         cache,
                     ))
                 } else {
                     let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
-                        let item = gatherer.gather(n.iter().flat_map(|c| c.iter()));
+                        let item = gatherer.gather(children.iter().flat_map(|c| c.iter()));
                         cache.insert(base_region, item.clone());
                         item
                     });
                     PointerFurtherGatherCacheIter::Shallow(Some((base_region, item)), cache)
                 }
             }
-            MortonOctree::Leaf(ref item, morton) => {
+            Internal::Leaf(ref item, morton) => {
                 let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
                     let item = gatherer.gather(std::iter::once((*morton, item)));
                     cache.insert(base_region, item.clone());
@@ -329,8 +335,8 @@ where
                 });
                 PointerFurtherGatherCacheIter::Shallow(Some((base_region, item)), cache)
             }
-            MortonOctree::None => PointerFurtherGatherCacheIter::Deep(
-                MortonOctreeFurtherGatherCacheIter::new(vec![], further, gatherer, cache),
+            Internal::None => PointerFurtherGatherCacheIter::Deep(
+                InternalFurtherGatherCacheIter::new(vec![], further, gatherer, cache),
             ),
         }
     }
@@ -360,7 +366,7 @@ where
                     .or_else(|| {
                         // We have to make sure this node is not None or else we can't gather it.
                         // This is because `gather` must be guaranteed that its not passed an empty iterator.
-                        if let MortonOctree::None = self {
+                        if let Internal::None = self {
                             None
                         } else {
                             Some(self)
@@ -376,11 +382,11 @@ where
             )
         } else {
             match self {
-                MortonOctree::Node(box ref n) => {
+                Internal::Node(box Oct { ref children }) => {
                     trace!("chose deep due to node");
                     PointerFurtherGatherRandomCacheIter::Deep(
-                        MortonOctreeFurtherGatherRandomCacheIter::new(
-                            vec![(n, base_region.enter(0))],
+                        InternalFurtherGatherRandomCacheIter::new(
+                            vec![(children, base_region.enter(0))],
                             further,
                             gatherer,
                             depth,
@@ -389,7 +395,7 @@ where
                         ),
                     )
                 }
-                MortonOctree::Leaf(ref item, morton) => {
+                Internal::Leaf(ref item, morton) => {
                     trace!("chose shallow due to leaf");
                     let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
                         let item = gatherer.gather(std::iter::once((*morton, item)));
@@ -398,10 +404,10 @@ where
                     });
                     PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
                 }
-                MortonOctree::None => {
+                Internal::None => {
                     trace!("chose empty deep due to None");
                     PointerFurtherGatherRandomCacheIter::Deep(
-                        MortonOctreeFurtherGatherRandomCacheIter::new(
+                        InternalFurtherGatherRandomCacheIter::new(
                             vec![],
                             further,
                             gatherer,
@@ -424,15 +430,15 @@ where
         let base_region: MortonRegion<M> = MortonRegion::default();
         let mut nodes = Vec::new();
         match self {
-            MortonOctree::Node(box ref n) => {
+            Internal::Node(box Oct { ref children }) => {
                 map.insert(
                     base_region,
-                    gatherer.gather(n.iter().flat_map(|c| c.iter())),
+                    gatherer.gather(children.iter().flat_map(|c| c.iter())),
                 );
 
-                nodes.push((n, base_region.enter(0)));
+                nodes.push((children, base_region.enter(0)));
             }
-            MortonOctree::Leaf(ref item, morton) => {
+            Internal::Leaf(ref item, morton) => {
                 map.insert(
                     base_region,
                     gatherer.gather(std::iter::once((*morton, item))),
@@ -448,7 +454,7 @@ where
             }
 
             match node[region.get()] {
-                MortonOctree::Node(ref children) => {
+                Internal::Node(box Oct { ref children }) => {
                     map.insert(
                         region,
                         gatherer.gather(children.iter().flat_map(|c| c.iter())),
@@ -458,7 +464,7 @@ where
                         nodes.push((children, region.enter(0)));
                     }
                 }
-                MortonOctree::Leaf(ref item, morton) => {
+                Internal::Leaf(ref item, morton) => {
                     map.insert(region, gatherer.gather(std::iter::once((morton, item))));
                 }
                 _ => {}
@@ -482,10 +488,10 @@ where
         G::Sum: Clone,
     {
         match self {
-            MortonOctree::Node(box ref n) => {
+            Internal::Node(box Oct { ref children }) => {
                 if region.level < M::dim_bits() {
                     if let Some(sum) = folder.sum((0..8).filter_map(|i| {
-                        n[i].iter_gather_deep_linear_hashed_tree_fold(
+                        children[i].iter_gather_deep_linear_hashed_tree_fold(
                             region.enter(i),
                             gatherer,
                             folder,
@@ -501,7 +507,7 @@ where
                     panic!("iter_gather_deep_linear_hashed_tree_fold(): if we get here, then we let a leaf descend pass morton range");
                 }
             }
-            MortonOctree::Leaf(ref item, morton) => {
+            Internal::Leaf(ref item, morton) => {
                 let sum = gatherer.gather(std::iter::once((*morton, item)));
                 map.insert(region, sum.clone());
                 Some(sum)
@@ -512,31 +518,33 @@ where
 
     #[inline]
     fn empty_node() -> Self {
-        use self::MortonOctree::*;
-        Node(box [None, None, None, None, None, None, None, None])
+        use self::Internal::*;
+        Node(box Oct::new([
+            None, None, None, None, None, None, None, None,
+        ]))
     }
 }
 
-impl<T, M> Default for MortonOctree<T, M> {
+impl<T, M> Default for Internal<T, M> {
     fn default() -> Self {
-        MortonOctree::None
+        Internal::None
     }
 }
 
-struct MortonOctreeIter<'a, T, M> {
-    nodes: Vec<(&'a [MortonOctree<T, M>; 8], usize)>,
+struct InternalIter<'a, T, M> {
+    nodes: Vec<(&'a [Internal<T, M>; 8], usize)>,
 }
 
-impl<'a, T, M> MortonOctreeIter<'a, T, M>
+impl<'a, T, M> InternalIter<'a, T, M>
 where
     M: Morton,
 {
-    fn new(nodes: Vec<(&'a [MortonOctree<T, M>; 8], usize)>) -> Self {
-        MortonOctreeIter { nodes }
+    fn new(nodes: Vec<(&'a [Internal<T, M>; 8], usize)>) -> Self {
+        InternalIter { nodes }
     }
 }
 
-impl<'a, T, M> Iterator for MortonOctreeIter<'a, T, M>
+impl<'a, T, M> Iterator for InternalIter<'a, T, M>
 where
     M: Morton,
 {
@@ -549,8 +557,8 @@ where
                 self.nodes.push((node, ix + 1));
             }
             match node[ix] {
-                MortonOctree::Node(ref children) => self.nodes.push((children, 0)),
-                MortonOctree::Leaf(ref item, morton) => {
+                Internal::Node(box Oct { ref children }) => self.nodes.push((children, 0)),
+                Internal::Leaf(ref item, morton) => {
                     return Some((morton, item));
                 }
                 _ => {}
@@ -560,25 +568,25 @@ where
     }
 }
 
-type NodeIndexLevel<'a, T, M> = (&'a [MortonOctree<T, M>; 8], usize, usize);
+type NodeIndexLevel<'a, T, M> = (&'a [Internal<T, M>; 8], usize, usize);
 
-struct MortonOctreeRandIter<'a, T, M, R> {
+struct InternalRandIter<'a, T, M, R> {
     nodes: Vec<NodeIndexLevel<'a, T, M>>,
     depth: usize,
     rng: &'a mut R,
 }
 
-impl<'a, T, M, R> MortonOctreeRandIter<'a, T, M, R>
+impl<'a, T, M, R> InternalRandIter<'a, T, M, R>
 where
     M: Morton,
     R: Rng,
 {
     fn new(nodes: Vec<NodeIndexLevel<'a, T, M>>, depth: usize, rng: &'a mut R) -> Self {
-        MortonOctreeRandIter { nodes, depth, rng }
+        InternalRandIter { nodes, depth, rng }
     }
 }
 
-impl<'a, T, M, R> Iterator for MortonOctreeRandIter<'a, T, M, R>
+impl<'a, T, M, R> Iterator for InternalRandIter<'a, T, M, R>
 where
     M: Morton,
     R: Rng,
@@ -592,14 +600,14 @@ where
                 self.nodes.push((node, ix + 1, level));
             }
             match node[ix] {
-                MortonOctree::Node(ref children) => self.nodes.push((
+                Internal::Node(box Oct { ref children }) => self.nodes.push((
                     children,
                     if level >= self.depth {
                         let mut choice = self.rng.gen_range(0, 8);
                         // Iterate until we find the first non-empty spot.
                         // This technically results in not completely random behavior
                         // since an octant that comes after more empty octants is more likely to be chosen.
-                        while let MortonOctree::None = children[choice] {
+                        while let Internal::None = children[choice] {
                             choice += 1;
                             choice %= 8;
                         }
@@ -609,7 +617,7 @@ where
                     },
                     level + 1,
                 )),
-                MortonOctree::Leaf(ref item, morton) => {
+                Internal::Leaf(ref item, morton) => {
                     return Some((morton, item));
                 }
                 _ => {}
@@ -619,22 +627,17 @@ where
     }
 }
 
-type MortonOctreeFurtherGatherIterNodeStack<'a, T, M> =
-    Vec<(&'a [MortonOctree<T, M>; 8], MortonRegion<M>)>;
+type InternalFurtherGatherIterNodeStack<'a, T, M> = Vec<(&'a [Internal<T, M>; 8], MortonRegion<M>)>;
 
-struct MortonOctreeFurtherGatherIter<'a, T, M, F, G> {
-    nodes: MortonOctreeFurtherGatherIterNodeStack<'a, T, M>,
+struct InternalFurtherGatherIter<'a, T, M, F, G> {
+    nodes: InternalFurtherGatherIterNodeStack<'a, T, M>,
     further: F,
     gatherer: G,
 }
 
-impl<'a, T, M, F, G> MortonOctreeFurtherGatherIter<'a, T, M, F, G> {
-    fn new(
-        nodes: MortonOctreeFurtherGatherIterNodeStack<'a, T, M>,
-        further: F,
-        gatherer: G,
-    ) -> Self {
-        MortonOctreeFurtherGatherIter {
+impl<'a, T, M, F, G> InternalFurtherGatherIter<'a, T, M, F, G> {
+    fn new(nodes: InternalFurtherGatherIterNodeStack<'a, T, M>, further: F, gatherer: G) -> Self {
+        InternalFurtherGatherIter {
             nodes,
             further,
             gatherer,
@@ -642,7 +645,7 @@ impl<'a, T, M, F, G> MortonOctreeFurtherGatherIter<'a, T, M, F, G> {
     }
 }
 
-impl<'a, T, M, F, G> Iterator for MortonOctreeFurtherGatherIter<'a, T, M, F, G>
+impl<'a, T, M, F, G> Iterator for InternalFurtherGatherIter<'a, T, M, F, G>
 where
     M: Morton,
     F: FnMut(MortonRegion<M>) -> bool,
@@ -659,7 +662,7 @@ where
             }
 
             match node[region.get()] {
-                MortonOctree::Node(ref children) => {
+                Internal::Node(box Oct { ref children }) => {
                     if (self.further)(region) {
                         self.nodes.push((children, region.enter(0)));
                     } else {
@@ -669,7 +672,7 @@ where
                         ));
                     }
                 }
-                MortonOctree::Leaf(ref item, morton) => {
+                Internal::Leaf(ref item, morton) => {
                     return Some((
                         region,
                         self.gatherer.gather(std::iter::once((morton, item))),
@@ -687,7 +690,7 @@ where
     G: Gatherer<T, M>,
     M: Morton,
 {
-    Deep(MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>),
+    Deep(InternalFurtherGatherCacheIter<'a, T, M, F, G>),
     Shallow(
         Option<(MortonRegion<M>, G::Sum)>,
         MortonRegionCache<G::Sum, M>,
@@ -728,32 +731,32 @@ where
     }
 }
 
-type MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, M> =
-    Vec<(&'a [MortonOctree<T, M>; 8], MortonRegion<M>)>;
+type InternalFurtherGatherCacheIterNodeStack<'a, T, M> =
+    Vec<(&'a [Internal<T, M>; 8], MortonRegion<M>)>;
 
-pub struct MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
+pub struct InternalFurtherGatherCacheIter<'a, T, M, F, G>
 where
     G: Gatherer<T, M>,
     M: Morton,
 {
-    nodes: MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, M>,
+    nodes: InternalFurtherGatherCacheIterNodeStack<'a, T, M>,
     further: F,
     gatherer: G,
     cache: MortonRegionCache<G::Sum, M>,
 }
 
-impl<'a, T, M, F, G> MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
+impl<'a, T, M, F, G> InternalFurtherGatherCacheIter<'a, T, M, F, G>
 where
     G: Gatherer<T, M>,
     M: Morton,
 {
     fn new(
-        nodes: MortonOctreeFurtherGatherCacheIterNodeStack<'a, T, M>,
+        nodes: InternalFurtherGatherCacheIterNodeStack<'a, T, M>,
         further: F,
         gatherer: G,
         cache: MortonRegionCache<G::Sum, M>,
     ) -> Self {
-        MortonOctreeFurtherGatherCacheIter {
+        InternalFurtherGatherCacheIter {
             nodes,
             further,
             gatherer,
@@ -766,7 +769,7 @@ where
     }
 }
 
-impl<'a, T, M, F, G> Iterator for MortonOctreeFurtherGatherCacheIter<'a, T, M, F, G>
+impl<'a, T, M, F, G> Iterator for InternalFurtherGatherCacheIter<'a, T, M, F, G>
 where
     M: Morton,
     F: FnMut(MortonRegion<M>) -> bool,
@@ -784,7 +787,7 @@ where
             }
 
             match node[region.get()] {
-                MortonOctree::Node(ref children) => {
+                Internal::Node(box Oct { ref children }) => {
                     if (self.further)(region) {
                         self.nodes.push((children, region.enter(0)));
                     } else {
@@ -796,7 +799,7 @@ where
                         return Some((region, item));
                     }
                 }
-                MortonOctree::Leaf(ref item, morton) => {
+                Internal::Leaf(ref item, morton) => {
                     let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
                         let item = self.gatherer.gather(std::iter::once((morton, item)));
                         self.cache.insert(region, item.clone());
@@ -818,7 +821,7 @@ where
     R: Rng,
     M: Morton,
 {
-    Deep(MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>),
+    Deep(InternalFurtherGatherRandomCacheIter<'a, T, M, F, G, R>),
     Shallow(
         Option<(MortonRegion<M>, G::Sum)>,
         MortonRegionCache<G::Sum, M>,
@@ -861,16 +864,16 @@ where
     }
 }
 
-type MortonOctreeFurtherGatherRandomCacheIterNodeStack<'a, T, M> =
-    Vec<(&'a [MortonOctree<T, M>; 8], MortonRegion<M>)>;
+type InternalFurtherGatherRandomCacheIterNodeStack<'a, T, M> =
+    Vec<(&'a [Internal<T, M>; 8], MortonRegion<M>)>;
 
-pub struct MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+pub struct InternalFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
 where
     G: Gatherer<T, M>,
     R: Rng,
     M: Morton,
 {
-    nodes: MortonOctreeFurtherGatherRandomCacheIterNodeStack<'a, T, M>,
+    nodes: InternalFurtherGatherRandomCacheIterNodeStack<'a, T, M>,
     further: F,
     gatherer: G,
     depth: usize,
@@ -878,21 +881,21 @@ where
     cache: MortonRegionCache<G::Sum, M>,
 }
 
-impl<'a, T, M, F, G, R> MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+impl<'a, T, M, F, G, R> InternalFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
 where
     G: Gatherer<T, M>,
     R: Rng,
     M: Morton,
 {
     fn new(
-        nodes: MortonOctreeFurtherGatherRandomCacheIterNodeStack<'a, T, M>,
+        nodes: InternalFurtherGatherRandomCacheIterNodeStack<'a, T, M>,
         further: F,
         gatherer: G,
         depth: usize,
         rng: &'a mut R,
         cache: MortonRegionCache<G::Sum, M>,
     ) -> Self {
-        MortonOctreeFurtherGatherRandomCacheIter {
+        InternalFurtherGatherRandomCacheIter {
             nodes,
             further,
             gatherer,
@@ -907,7 +910,7 @@ where
     }
 }
 
-impl<'a, T, M, F, G, R> Iterator for MortonOctreeFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
+impl<'a, T, M, F, G, R> Iterator for InternalFurtherGatherRandomCacheIter<'a, T, M, F, G, R>
 where
     M: Morton,
     F: FnMut(MortonRegion<M>) -> bool,
@@ -936,7 +939,7 @@ where
                     .or_else(|| {
                         // We have to make sure this node is not None or else we can't gather it.
                         // This is because `gather` must be guaranteed that its not passed an empty iterator.
-                        if let MortonOctree::None = node[region.get()] {
+                        if let Internal::None = node[region.get()] {
                             None
                         } else {
                             Some(&node[region.get()])
@@ -953,12 +956,12 @@ where
                 }
             } else {
                 match node[region.get()] {
-                    MortonOctree::Node(ref children) => {
+                    Internal::Node(box Oct { ref children }) => {
                         trace!("traversing deeper due to node at level {}", region.level);
                         // Traverse deeper (we already checked if we didn't need to go further).
                         self.nodes.push((children, region.enter(0)));
                     }
-                    MortonOctree::Leaf(ref item, morton) => {
+                    Internal::Leaf(ref item, morton) => {
                         trace!("stopping due to leaf at level {}", region.level);
                         let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
                             let item = self.gatherer.gather(std::iter::once((morton, item)));
