@@ -4,9 +4,7 @@ use crate::octree::*;
 use itertools::Itertools;
 
 use rand::Rng;
-use smallvec::{smallvec, SmallVec};
 use std::default::Default;
-use std::iter::repeat_with;
 
 use log::*;
 
@@ -51,17 +49,17 @@ where
             .into_inner();
 
         match tree_part {
-            MortonOctree::Leaf(nodes, dest_morton) => {
-                // If they have the same code then add it to the same Vec and be done with it.
+            MortonOctree::Leaf(ref mut leaf_item, dest_morton) => {
+                // If they have the same code then replace it.
                 if morton == *dest_morton {
-                    nodes.push(item);
+                    *leaf_item = item;
                     return;
                 }
                 // Otherwise we must split them, which we must do outside of this scope due to the borrow.
             }
             MortonOctree::None => {
                 // Simply add a new leaf.
-                *tree_part = MortonOctree::Leaf(smallvec![item], morton);
+                *tree_part = MortonOctree::Leaf(item, morton);
                 return;
             }
             _ => {
@@ -74,7 +72,7 @@ where
         let mut dest_old = MortonOctree::empty_node();
         std::mem::swap(&mut dest_old, tree_part);
 
-        if let MortonOctree::Leaf(dest_vec, dest_morton) = dest_old {
+        if let MortonOctree::Leaf(dest_item, dest_morton) = dest_old {
             // Set our initial reference to the default node in the dest.
             let mut building_node = tree_part;
             // Create deeper nodes till they differ at some level.
@@ -86,9 +84,9 @@ where
                         building_node = &mut children[morton.get_level(i)];
                     } else {
                         // We reached the end where they differ, so put them both into the node.
-                        children[morton.get_level(i)] = MortonOctree::Leaf(smallvec![item], morton);
+                        children[morton.get_level(i)] = MortonOctree::Leaf(item, morton);
                         children[dest_morton.get_level(i)] =
-                            MortonOctree::Leaf(dest_vec, dest_morton);
+                            MortonOctree::Leaf(dest_item, dest_morton);
                         return;
                     }
                 } else {
@@ -211,7 +209,7 @@ where
 #[derive(Clone, Debug)]
 enum MortonOctree<T, M> {
     Node(Box<[MortonOctree<T, M>; 8]>),
-    Leaf(SmallVec<[T; 1]>, M),
+    Leaf(T, M),
     None,
 }
 
@@ -223,9 +221,7 @@ where
         use either::Either::*;
         match self {
             MortonOctree::Node(box ref n) => Left(MortonOctreeIter::new(vec![(n, 0)])),
-            MortonOctree::Leaf(ref item, morton) => {
-                Right(item.iter().map(move |item| (*morton, item)))
-            }
+            MortonOctree::Leaf(ref item, morton) => Right(std::iter::once((*morton, item))),
             MortonOctree::None => Left(MortonOctreeIter::new(vec![])),
         }
     }
@@ -252,9 +248,7 @@ where
                     Left({ MortonOctreeRandIter::new(vec![(children, 0, 1)], depth, rng) })
                 }
             }
-            MortonOctree::Leaf(ref item, morton) => {
-                Right(item.iter().map(move |item| (*morton, item)))
-            }
+            MortonOctree::Leaf(ref item, morton) => Right(std::iter::once((*morton, item))),
             MortonOctree::None => Left(MortonOctreeRandIter::new(vec![], depth, rng)),
         }
     }
@@ -285,9 +279,9 @@ where
                     )))
                 }
             }
-            MortonOctree::Leaf(ref items, morton) => Right(std::iter::once((
+            MortonOctree::Leaf(ref item, morton) => Right(std::iter::once((
                 base_region,
-                gatherer.gather(items.iter().map(|i| (*morton, i))),
+                gatherer.gather(std::iter::once((*morton, item))),
             ))),
             MortonOctree::None => Left(MortonOctreeFurtherGatherIter::new(
                 vec![],
@@ -327,9 +321,9 @@ where
                     PointerFurtherGatherCacheIter::Shallow(Some((base_region, item)), cache)
                 }
             }
-            MortonOctree::Leaf(ref items, morton) => {
+            MortonOctree::Leaf(ref item, morton) => {
                 let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
-                    let item = gatherer.gather(items.iter().map(|i| (*morton, i)));
+                    let item = gatherer.gather(std::iter::once((*morton, item)));
                     cache.insert(base_region, item.clone());
                     item
                 });
@@ -395,16 +389,13 @@ where
                         ),
                     )
                 }
-                MortonOctree::Leaf(ref items, morton) => {
+                MortonOctree::Leaf(ref item, morton) => {
                     trace!("chose shallow due to leaf");
-                    let total_samples = 8usize.pow(depth as u32);
                     let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
-                    let item = gatherer.gather(repeat_with(|| rng.choose(items))
-                        .take(total_samples)
-                        .map(|item| (*morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),);
-                    cache.insert(base_region, item.clone());
-                    item
-                });
+                        let item = gatherer.gather(std::iter::once((*morton, item)));
+                        cache.insert(base_region, item.clone());
+                        item
+                    });
                     PointerFurtherGatherRandomCacheIter::Shallow(Some((base_region, item)), cache)
                 }
                 MortonOctree::None => {
@@ -441,10 +432,10 @@ where
 
                 nodes.push((n, base_region.enter(0)));
             }
-            MortonOctree::Leaf(ref items, morton) => {
+            MortonOctree::Leaf(ref item, morton) => {
                 map.insert(
                     base_region,
-                    gatherer.gather(items.iter().map(|i| (*morton, i))),
+                    gatherer.gather(std::iter::once((*morton, item))),
                 );
             }
             _ => {}
@@ -467,8 +458,8 @@ where
                         nodes.push((children, region.enter(0)));
                     }
                 }
-                MortonOctree::Leaf(ref items, morton) => {
-                    map.insert(region, gatherer.gather(items.iter().map(|i| (morton, i))));
+                MortonOctree::Leaf(ref item, morton) => {
+                    map.insert(region, gatherer.gather(std::iter::once((morton, item))));
                 }
                 _ => {}
             }
@@ -510,8 +501,8 @@ where
                     panic!("iter_gather_deep_linear_hashed_tree_fold(): if we get here, then we let a leaf descend pass morton range");
                 }
             }
-            MortonOctree::Leaf(ref items, morton) => {
-                let sum = gatherer.gather(items.iter().map(|i| (*morton, i)));
+            MortonOctree::Leaf(ref item, morton) => {
+                let sum = gatherer.gather(std::iter::once((*morton, item)));
                 map.insert(region, sum.clone());
                 Some(sum)
             }
@@ -534,8 +525,6 @@ impl<T, M> Default for MortonOctree<T, M> {
 
 struct MortonOctreeIter<'a, T, M> {
     nodes: Vec<(&'a [MortonOctree<T, M>; 8], usize)>,
-    vec_iter: std::slice::Iter<'a, T>,
-    vec_morton: M,
 }
 
 impl<'a, T, M> MortonOctreeIter<'a, T, M>
@@ -543,11 +532,7 @@ where
     M: Morton,
 {
     fn new(nodes: Vec<(&'a [MortonOctree<T, M>; 8], usize)>) -> Self {
-        MortonOctreeIter {
-            nodes,
-            vec_iter: [].iter(),
-            vec_morton: M::zero(),
-        }
+        MortonOctreeIter { nodes }
     }
 }
 
@@ -559,27 +544,19 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.vec_iter
-            .next()
-            .map(|item| (self.vec_morton, item))
-            .or_else(|| {
-                while let Some((node, ix)) = self.nodes.pop() {
-                    if ix != 7 {
-                        self.nodes.push((node, ix + 1));
-                    }
-                    match node[ix] {
-                        MortonOctree::Node(ref children) => self.nodes.push((children, 0)),
-                        MortonOctree::Leaf(ref item, morton) => {
-                            self.vec_iter = item.iter();
-                            self.vec_morton = morton;
-                            // This wont work if there is ever an empty vec.
-                            return self.vec_iter.next().map(|item| (self.vec_morton, item));
-                        }
-                        _ => {}
-                    }
+        while let Some((node, ix)) = self.nodes.pop() {
+            if ix != 7 {
+                self.nodes.push((node, ix + 1));
+            }
+            match node[ix] {
+                MortonOctree::Node(ref children) => self.nodes.push((children, 0)),
+                MortonOctree::Leaf(ref item, morton) => {
+                    return Some((morton, item));
                 }
-                None
-            })
+                _ => {}
+            }
+        }
+        None
     }
 }
 
@@ -587,10 +564,6 @@ type NodeIndexLevel<'a, T, M> = (&'a [MortonOctree<T, M>; 8], usize, usize);
 
 struct MortonOctreeRandIter<'a, T, M, R> {
     nodes: Vec<NodeIndexLevel<'a, T, M>>,
-    slice: &'a [T],
-    slice_remaining_samples: usize,
-    slice_morton: M,
-    slice_random_sample: bool,
     depth: usize,
     rng: &'a mut R,
 }
@@ -601,15 +574,7 @@ where
     R: Rng,
 {
     fn new(nodes: Vec<NodeIndexLevel<'a, T, M>>, depth: usize, rng: &'a mut R) -> Self {
-        MortonOctreeRandIter {
-            nodes,
-            slice: &[],
-            slice_remaining_samples: 0,
-            slice_morton: M::zero(),
-            slice_random_sample: false,
-            depth,
-            rng,
-        }
+        MortonOctreeRandIter { nodes, depth, rng }
     }
 }
 
@@ -622,72 +587,35 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.slice_remaining_samples != 0 {
-            self.slice_remaining_samples -= 1;
-            if self.slice_random_sample {
-                Some((
-                    self.slice_morton,
-                    self.rng
-                        .choose(self.slice)
-                        .expect("shouldn't ever have empty slice"),
-                ))
-            } else if let Some((item, slice)) = self.slice.split_first() {
-                self.slice = slice;
-                Some((self.slice_morton, item))
-            } else {
-                unreachable!()
+        while let Some((node, ix, level)) = self.nodes.pop() {
+            if level <= self.depth && ix != 7 {
+                self.nodes.push((node, ix + 1, level));
             }
-        } else {
-            while let Some((node, ix, level)) = self.nodes.pop() {
-                if level <= self.depth && ix != 7 {
-                    self.nodes.push((node, ix + 1, level));
+            match node[ix] {
+                MortonOctree::Node(ref children) => self.nodes.push((
+                    children,
+                    if level >= self.depth {
+                        let mut choice = self.rng.gen_range(0, 8);
+                        // Iterate until we find the first non-empty spot.
+                        // This technically results in not completely random behavior
+                        // since an octant that comes after more empty octants is more likely to be chosen.
+                        while let MortonOctree::None = children[choice] {
+                            choice += 1;
+                            choice %= 8;
+                        }
+                        choice
+                    } else {
+                        0
+                    },
+                    level + 1,
+                )),
+                MortonOctree::Leaf(ref item, morton) => {
+                    return Some((morton, item));
                 }
-                match node[ix] {
-                    MortonOctree::Node(ref children) => self.nodes.push((
-                        children,
-                        if level >= self.depth {
-                            let mut choice = self.rng.gen_range(0, 8);
-                            // Iterate until we find the first non-empty spot.
-                            // This technically results in not completely random behavior
-                            // since an octant that comes after more empty octants is more likely to be chosen.
-                            while let MortonOctree::None = children[choice] {
-                                choice += 1;
-                                choice %= 8;
-                            }
-                            choice
-                        } else {
-                            0
-                        },
-                        level + 1,
-                    )),
-                    MortonOctree::Leaf(ref item, morton) => {
-                        self.slice = &item;
-                        self.slice_morton = morton;
-                        if level < self.depth {
-                            // If level is less than depth then we need to randomly sample the vec
-                            // a number of times equivalent to how many times we would sample
-                            // if we were to traverse deeper.
-                            self.slice_remaining_samples =
-                                8usize.pow((self.depth - level) as u32) - 1;
-
-                            // We also need to ensure that if the number of random samples exceeds the amount of items
-                            // that we just iterate instead of randomly sample.
-                            self.slice_random_sample =
-                                self.slice_remaining_samples < self.slice.len();
-                        };
-                        // Randomly sample the vec once.
-                        return Some((
-                            morton,
-                            self.rng
-                                .choose(self.slice)
-                                .expect("shouldn't ever have empty slice"),
-                        ));
-                    }
-                    _ => {}
-                }
+                _ => {}
             }
-            None
         }
+        None
     }
 }
 
@@ -741,10 +669,10 @@ where
                         ));
                     }
                 }
-                MortonOctree::Leaf(ref items, morton) => {
+                MortonOctree::Leaf(ref item, morton) => {
                     return Some((
                         region,
-                        self.gatherer.gather(items.iter().map(|i| (morton, i))),
+                        self.gatherer.gather(std::iter::once((morton, item))),
                     ));
                 }
                 _ => {}
@@ -868,9 +796,9 @@ where
                         return Some((region, item));
                     }
                 }
-                MortonOctree::Leaf(ref items, morton) => {
+                MortonOctree::Leaf(ref item, morton) => {
                     let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
-                        let item = self.gatherer.gather(items.iter().map(|i| (morton, i)));
+                        let item = self.gatherer.gather(std::iter::once((morton, item)));
                         self.cache.insert(region, item.clone());
                         item
                     });
@@ -1030,20 +958,10 @@ where
                         // Traverse deeper (we already checked if we didn't need to go further).
                         self.nodes.push((children, region.enter(0)));
                     }
-                    MortonOctree::Leaf(ref items, morton) => {
+                    MortonOctree::Leaf(ref item, morton) => {
                         trace!("stopping due to leaf at level {}", region.level);
-                        // We reached a leaf, so we have to sample regardless of if we should go further or not.
-                        // This always samples the leaf as if we should have stopped on it.
                         let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
-                            let total_samples = 8usize.pow(self.depth as u32);
-                            let rng = &mut self.rng;
-                            let item = if total_samples > items.len() {self.gatherer.gather(
-                                repeat_with(|| rng.choose(items))
-                                    .take(total_samples)
-                                    .map(|item| (morton, item.expect("space::octree::pointer::MortonOctreeFurtherGatherRandomCacheIter::next(): cant have an empty leaf"))),
-                            )} else {
-                                self.gatherer.gather(items.iter().map(|item| (morton, item)))
-                            };
+                            let item = self.gatherer.gather(std::iter::once((morton, item)));
                             self.cache.insert(region, item.clone());
                             item
                         });

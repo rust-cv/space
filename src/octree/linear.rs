@@ -2,13 +2,12 @@ use super::{
     morton::morton_levels, Folder, Gatherer, Morton, MortonMap, MortonRegion, MortonRegionMap,
     MortonWrapper,
 };
-use smallvec::{smallvec, SmallVec};
 
 /// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
 #[derive(Clone)]
 pub struct Linear<T, M> {
     /// The leaves of the octree. Uses `SmallVec` because in most cases this shouldn't have more than one element.
-    leaves: MortonMap<SmallVec<[T; 1]>, M>,
+    leaves: MortonMap<T, M>,
     /// The each internal node either contains a `null` Morton or a non-null Morton which points to a leaf.
     /// Nodes which are not explicity stated implicitly indicate that it must be traversed deeper.
     internals: MortonRegionMap<M, M>,
@@ -36,13 +35,18 @@ where
         Default::default()
     }
 
+    /// Inserts the item into the octree.
+    ///
+    /// If another element occupied the exact same morton, it will be evicted and replaced.
     pub fn insert(&mut self, morton: M, item: T) {
         use std::collections::hash_map::Entry::*;
         // First we must insert the node into the leaves.
         match self.leaves.entry(MortonWrapper(morton)) {
-            Occupied(mut o) => o.get_mut().push(item),
+            Occupied(mut o) => {
+                o.insert(item);
+            }
             Vacant(v) => {
-                v.insert(smallvec![item]);
+                v.insert(item);
 
                 // Because it was vacant, we need to adjust the tree's internal nodes.
                 for mut region in morton_levels(morton) {
@@ -128,7 +132,8 @@ where
         match self.internals.get(&region) {
             Some(m) if !m.is_null() => {
                 // This is a leaf node.
-                let sum = gatherer.gather(self.leaves[&MortonWrapper(*m)].iter().map(|i| (*m, i)));
+                let sum = gatherer
+                    .gather(std::iter::once(&self.leaves[&MortonWrapper(*m)]).map(|i| (*m, i)));
                 map.insert(region, sum.clone());
                 Some(sum)
             }
