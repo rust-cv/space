@@ -1,9 +1,9 @@
-use super::{
-    morton::morton_levels, Folder, Gatherer, Morton, MortonMap, MortonRegion, MortonRegionMap,
-    MortonWrapper,
+use crate::{
+    morton::*,
+    octree::{Folder, Gatherer},
 };
 
-/// An octree that starts with a cube from [-1, 1] in each dimension and will only expand.
+/// A linear hashed octree. This has constant time lookup for a given region or morton code.
 #[derive(Clone)]
 pub struct Linear<T, M> {
     /// The leaves of the octree. Uses `SmallVec` because in most cases this shouldn't have more than one element.
@@ -100,6 +100,9 @@ where
     }
 
     /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
+    /// This allows information to be folded up the tree so it doesn't have to be computed multiple times.
+    /// This has O(n) `gather` operations and O(n^(7/8)) `fold` operations, with each gather operation
+    /// always gathering `1` leaf and each `fold` operation gathering no more than `8` other folds.
     pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
         &self,
         region: MortonRegion<M>,
@@ -116,7 +119,8 @@ where
         map
     }
 
-    /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
+    /// Same as `iter_gather_deep_linear_hashed_tree_fold`, but adds things to a morton region map rather than
+    /// giving back an iterator.
     pub fn iter_gather_deep_linear_hashed_tree_fold_map_adder<G, F>(
         &self,
         region: MortonRegion<M>,

@@ -1,3 +1,5 @@
+//! This module contains helpers to work with morton codes, otherwise known as a z-order curve.
+
 mod region;
 mod wrapper;
 
@@ -34,38 +36,57 @@ where
     })
 }
 
-/// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized, boxes.
+/// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized,
+/// linear boxes. This morton code is always encoding 3 dimensional data.
 pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash {
     const BITS: usize;
 
+    /// Encode the three dimensions (x, y, z) into a morton code.
     fn encode(x: Self, y: Self, z: Self) -> Self;
+    /// Decode the morton code into the three individual dimensions (x, y, z).
     fn decode(self) -> (Self, Self, Self);
 
+    /// The number of bits used to represent each dimension.
     #[inline]
     fn dim_bits() -> usize {
         Self::BITS / 3
     }
 
+    /// The highest level of the morton code's bits.
     #[inline]
     fn highest_bits() -> Self {
         Self::from_u8(0b111).unwrap() << (3 * (Self::dim_bits() - 1))
     }
 
+    /// The bits in the morton that are used. Because there are three equal dimensions, that
+    /// means that it will never perfectly divide into a power of two because a power of two, by definition,
+    /// only has prime factors of 2, therefore regardless of the integer type there will always be 2 or 1 unsued
+    /// bits that are not captured in the mask.
     #[inline]
     fn used_bits() -> Self {
         (Self::one() << (3 * Self::dim_bits())) - Self::one()
     }
 
+    /// Same as `used_bits`, but its instead the mask of the bits not in use.
     #[inline]
     fn unused_bits() -> Self {
         !Self::used_bits()
     }
 
+    /// Get the bits being used in a morton code with a particular level.
+    ///
+    /// If the level of a morton is 0, then we get only 3 bits from the "first" level.
+    /// If the level of a morton is 1, then we get only 6 bits from the "first" and "second" levels.
+    /// This continues until the level is the same as `Self::dim_bits() - 1`. This means this can only be
+    /// called when `level` is in the range `[0, Self::dim_bits())`.
     #[inline]
     fn get_significant_bits(self, level: usize) -> Self {
         self >> (3 * (Self::dim_bits() - level - 1))
     }
 
+    /// This is similar to `get_significant_bits`, but it also masks out all the levels above the specific
+    /// one chosen so that a number from `[0, 8)` is returned, which allows the choosing of an octant at
+    /// that `level`. By iterating over all the levels starting at `0`, it is possible to traverse an octree.
     #[inline]
     fn get_level(self, level: usize) -> usize {
         (self.get_significant_bits(level) & Self::from_u8(0b111).unwrap())
@@ -73,11 +94,13 @@ pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash {
             .unwrap()
     }
 
+    /// Gets the mask of a particular `level`.
     #[inline]
     fn level_mask(level: usize) -> Self {
         Self::highest_bits() >> (3 * level)
     }
 
+    /// This will set the `level` of a morton code. The passed val must be in the range `[0, 8)`.
     #[inline]
     fn set_level(&mut self, level: usize, val: usize) {
         if Self::dim_bits() < level + 1 {
@@ -87,20 +110,24 @@ pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash {
                 Self::dim_bits() - 1
             );
         }
-        *self = (*self & !Self::level_mask(level))
-            | Self::from_usize(val).unwrap() << (3 * (Self::dim_bits() - level - 1))
+        self.reset_level(level);
+        *self = *self | Self::from_usize(val).unwrap() << (3 * (Self::dim_bits() - level - 1))
     }
 
+    /// This sets a particular `level` in a morton code to `0`.
     #[inline]
     fn reset_level(&mut self, level: usize) {
         *self = *self & !Self::level_mask(level)
     }
 
+    /// Because the upper bits are never set in the morton code, it is possible to create a unique morton code
+    /// that doesn't represent an actual place in an octree which can be used as a null morton code.
     #[inline]
     fn null() -> Self {
         !Self::zero()
     }
 
+    /// This checks if a morton code is the null code obtained from `Self::null()`.
     #[inline]
     fn is_null(self) -> bool {
         self == Self::null()
@@ -157,11 +184,13 @@ pub type MortonBuildHasher = std::hash::BuildHasherDefault<MortonHash>;
 
 /// This const determines how many significant bits from the morton get added into the hash instead of multiplied
 /// by the FNV prime. This is done to improve cache locality for mortons and works to great effect. Unfortunately,
-/// this has a slight impact on memory consumption ~1/6, but the performance is drastically better. Little is gained
-/// by going to higher amounts of bits and the memory cost is too high.
+/// this has a slight impact on memory consumption a small amount that depends on the dataset, but the performance
+/// is drastically better for local interactions due to cache locality. Little is gained by going to higher amounts
+/// of bits than `3` and the memory cost is too high, so this is currently hardcoded to `3`.
 const CACHE_LOCALITY_BITS: usize = 3;
 
-/// This is not to be used with anything larger than 64-bit. This is not enforced presently.
+/// This is not to be used with anything other than a morton code, as it depends on its unique structure.
+/// This is not enforced at compile time currently.
 #[derive(Copy, Clone, Default)]
 pub struct MortonHash {
     value: u64,
@@ -194,6 +223,8 @@ impl Hasher for MortonHash {
     #[inline(always)]
     #[allow(clippy::unreadable_literal)]
     fn write_u64(&mut self, i: u64) {
+        // TODO: Investigate if masking out the bottom bits from the FNV improves cache line alignment/speed
+        // in benchmarks.
         let bottom_mask = (1 << CACHE_LOCALITY_BITS) - 1;
         let bottom = i & bottom_mask;
         let top = (i & !bottom_mask) >> CACHE_LOCALITY_BITS;

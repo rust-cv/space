@@ -1,4 +1,4 @@
-use crate::octree::morton::*;
+use crate::morton::*;
 use crate::octree::*;
 
 use itertools::Itertools;
@@ -36,7 +36,7 @@ impl<T, M> Pointer<T, M>
 where
     M: Morton,
 {
-    /// Dimensions of the top level node are fixed in the range [-2**level, 2**level].
+    /// Creates a new empty octree.
     pub fn new() -> Self {
         Self::default()
     }
@@ -127,6 +127,12 @@ where
         self.tree.iter_rand(depth, rng)
     }
 
+    /// Iterates over the octree and, for every internal node in the tree, runs `further` to check if it should
+    /// stop at this node or continue down to the leaves. If it stops at an internal node, it passes an iterator
+    /// over every leaf that descends from that internal node to `gatherer.gather()`. If it reaches a leaf node,
+    /// it passes an iterator over just that one leaf to the `gatherer`. Each invocation of the `gatherer.gather()`
+    /// is one item in the returned iterator. This allows an operation to be called on every region in the tree
+    /// using `further` to limit the traversal from iterating over the whole tree.
     pub fn iter_gather<'a, F, G>(
         &'a self,
         further: F,
@@ -139,6 +145,10 @@ where
         self.tree.iter_gather(further, gatherer)
     }
 
+    /// This is a variant of `iter_gather` that addionally allows the caching of gathered nodes.
+    ///
+    /// Note that whenever a node changes it should invalidate the internal nodes above it in the cache.
+    /// See `morton_levels` for more details.
     pub fn iter_gather_cached<'a, F, G>(
         &'a self,
         further: F,
@@ -153,6 +163,9 @@ where
         self.tree.iter_gather_cached(further, gatherer, cache)
     }
 
+    /// This is a variant of `iter_gather_cached` that takes a `depth` to sample at and will always randomly sample
+    /// once starting at that depth. This improves performance by avoiding gathering more that a number of nodes.
+    /// For many tasks, choosing a depth of `2` or `64` samples is performant and sufficient.
     pub fn iter_gather_random_cached<'a, F, G, R>(
         &'a self,
         depth: usize,
@@ -171,7 +184,8 @@ where
             .iter_gather_random_cached(depth, further, gatherer, rng, cache)
     }
 
-    /// This gathers the tree into a linear hashed octree map.
+    /// This gathers the tree into a linear hashed octree map. This map contained every internal and leaf node
+    /// and the result of gathering them.
     pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonRegionMap<G::Sum, M>
     where
         G: Gatherer<T, M>,
@@ -180,6 +194,9 @@ where
     }
 
     /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
+    /// This allows information to be folded up the tree so it doesn't have to be computed multiple times.
+    /// This has O(n) `gather` operations and O(n^(7/8)) `fold` operations, with each gather operation
+    /// always gathering `1` leaf and each `fold` operation gathering no more than `8` other folds.
     pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
         &self,
         gatherer: &G,
@@ -227,7 +244,8 @@ impl<T, M> Internal<T, M>
 where
     M: Morton,
 {
-    fn iter(&self) -> impl Iterator<Item = (M, &T)> {
+    /// Iterate over all octree nodes and their morton codes.
+    pub fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         use either::Either::*;
         match self {
             Internal::Node(box ref n) => Left(InternalIter::new(vec![(&n.children, 0)])),
@@ -236,7 +254,13 @@ where
         }
     }
 
-    fn iter_rand<'a, R: Rng>(
+    /// Iterate over all octree nodes, but stop at `depth` to randomly sample a point.
+    ///
+    /// If `depth` is set to `0`, only one point will be returned, which will either be the only point or
+    /// a random sampling (over space, not points) at the node at this point. If a `depth` of `1` is used,
+    /// it will traverse down by one level and do `8` random samples at that octree level. This will give back
+    /// an iterator of no more than `8` spots.
+    pub fn iter_rand<'a, R: Rng>(
         &'a self,
         depth: usize,
         rng: &'a mut R,
@@ -263,7 +287,13 @@ where
         }
     }
 
-    fn iter_gather<'a, F, G>(
+    /// Iterates over the octree and, for every internal node in the tree, runs `further` to check if it should
+    /// stop at this node or continue down to the leaves. If it stops at an internal node, it passes an iterator
+    /// over every leaf that descends from that internal node to `gatherer.gather()`. If it reaches a leaf node,
+    /// it passes an iterator over just that one leaf to the `gatherer`. Each invocation of the `gatherer.gather()`
+    /// is one item in the returned iterator. This allows an operation to be called on every region in the tree
+    /// using `further` to limit the traversal from iterating over the whole tree.
+    pub fn iter_gather<'a, F, G>(
         &'a self,
         mut further: F,
         gatherer: G,
@@ -297,7 +327,11 @@ where
         }
     }
 
-    fn iter_gather_cached<'a, F, G>(
+    /// This is a variant of `iter_gather` that addionally allows the caching of gathered nodes.
+    ///
+    /// Note that whenever a node changes it should invalidate the internal nodes above it in the cache.
+    /// See `morton_levels` for more details.
+    pub fn iter_gather_cached<'a, F, G>(
         &'a self,
         mut further: F,
         gatherer: G,
@@ -341,6 +375,9 @@ where
         }
     }
 
+    /// This is a variant of `iter_gather_cached` that takes a `depth` to sample at and will always randomly sample
+    /// once starting at that depth. This improves performance by avoiding gathering more that a number of nodes.
+    /// For many tasks, choosing a depth of `2` or `64` samples is performant and sufficient.
     pub fn iter_gather_random_cached<'a, F, G, R>(
         &'a self,
         depth: usize,
@@ -421,7 +458,8 @@ where
         }
     }
 
-    /// This gathers the tree into a linear hashed octree map.
+    /// This gathers the tree into a linear hashed octree map. This map contained every internal and leaf node
+    /// and the result of gathering them.
     pub fn iter_gather_deep_linear_hashed<G>(&self, gatherer: &G) -> MortonRegionMap<G::Sum, M>
     where
         G: Gatherer<T, M>,
@@ -474,7 +512,10 @@ where
         map
     }
 
-    /// This gathers the tree into a linear hashed octree map in a tree fold.
+    /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
+    /// This allows information to be folded up the tree so it doesn't have to be computed multiple times.
+    /// This has O(n) `gather` operations and O(n^(7/8)) `fold` operations, with each gather operation
+    /// always gathering `1` leaf and each `fold` operation gathering no more than `8` other folds.
     pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
         &self,
         region: MortonRegion<M>,
@@ -516,8 +557,9 @@ where
         }
     }
 
+    /// Gives back a `Node` with 8 empty `None` nodes.
     #[inline]
-    fn empty_node() -> Self {
+    pub fn empty_node() -> Self {
         use self::Internal::*;
         Node(box Oct::new([
             None, None, None, None, None, None, None, None,

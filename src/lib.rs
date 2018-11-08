@@ -1,5 +1,6 @@
 #![feature(box_syntax, box_patterns)]
 
+pub mod morton;
 pub mod octree;
 
 pub struct CartesianRegion<T>(pub T, pub T);
