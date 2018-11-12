@@ -101,8 +101,9 @@ where
 
     /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
     /// This allows information to be folded up the tree so it doesn't have to be computed multiple times.
-    /// This has O(n) `gather` operations and O(n^(7/8)) `fold` operations, with each gather operation
-    /// always gathering `1` leaf and each `fold` operation gathering no more than `8` other folds.
+    /// This has O(n) (exactly `n`) `gather` operations and O(n) (approximately `8/7 * n`) `fold` operations,
+    /// with each gather operation always gathering `1` leaf and each `fold` operation gathering no more
+    /// than `8` other fold sums.
     pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
         &self,
         region: MortonRegion<M>,
