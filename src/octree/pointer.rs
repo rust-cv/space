@@ -154,8 +154,11 @@ where
     where
         F: Folder<T, M> + 'a,
         F::Sum: Clone,
+        Standard: Distribution<M>,
     {
-        self.tree.iter_fold_random_cached(
+        // This uses `dim_bits` to avoid ever needing to use the rng (we cant go lower than that).
+        self.tree.iter_fold_random(
+            MortonRegion::base(),
             M::dim_bits(),
             |_| true,
             folder,
@@ -180,30 +183,37 @@ where
         cache: MortonRegionCache<F::Sum, M>,
     ) -> impl Iterator<Item = (MortonRegion<M>, F::Sum)> + Into<MortonRegionCache<F::Sum, M>> + 'a
     where
-        R: Rng,
-        F: FnMut(MortonRegion<M>) -> bool + 'a,
+        R: Rng + 'a,
+        E: FnMut(MortonRegion<M>) -> bool + 'a,
         F: Folder<T, M> + 'a,
         F::Sum: Clone,
+        Standard: Distribution<M>,
     {
         self.tree
-            .iter_fold_random_cached(depth, explore, folder, rng, cache)
+            .iter_fold_random(MortonRegion::base(), depth, explore, folder, rng, cache)
     }
 
     /// This gathers the tree into a linear hashed octree map. This map contains every internal and leaf node
     /// as the sum type that the `folder` produces.
-    pub fn collect_fold<F>(&self, folder: F) -> MortonRegionMap<F::Sum, M>
+    pub fn collect_fold<F>(&self, folder: &F) -> MortonRegionMap<F::Sum, M>
     where
         F: Folder<T, M>,
+        F::Sum: Clone,
     {
         let mut map = MortonRegionMap::with_hasher(MortonBuildHasher::default());
         self.tree
-            .collect_fold(MortonRegion::base(), &folder, &mut map);
+            .collect_fold(MortonRegion::base(), folder, &mut map);
         map
     }
 
     /// Returns the number of leaves in the tree.
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.count
+    }
+
+    /// Checks if the octree is empty.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
     }
 }
 
@@ -234,7 +244,7 @@ where
     M: Morton,
 {
     /// Iterate over all octree nodes and their morton codes.
-    pub fn iter(&self) -> impl Iterator<Item = (M, &T)> {
+    fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         use either::Either::*;
         match self {
             Internal::Node(box ref n) => Left(InternalIter::new(vec![(&n.children, 0)])),
@@ -249,7 +259,7 @@ where
     /// a random sampling (over space, not points) at the node at this point. If a `depth` of `1` is used,
     /// it will traverse down by one level and do `8` random samples at that octree level. This will give back
     /// an iterator of no more than `8` spots.
-    pub fn iter_rand<'a, R: Rng>(
+    fn iter_rand<'a, R: Rng>(
         &'a self,
         depth: usize,
         rng: &'a mut R,
@@ -276,31 +286,8 @@ where
         }
     }
 
-    /// Get a single random leaf sample from this node (if its none, will return None).
-    pub fn sample<'a, R: Rng>(&'a self, rng: &'a mut R) -> Option<(M, &'a T)>
-    where
-        Standard: Distribution<M>,
-    {
-        let morton = rng.gen();
-        match self {
-            Internal::Node(box Oct { ref children }) => {
-                let mut choice = morton.get_level(0);
-                // Iterate until we find the first non-empty spot.
-                // This technically results in not completely random behavior
-                // since an octant that comes after more empty octants is more likely to be chosen.
-                while let Internal::None = children[choice] {
-                    choice += 1;
-                    choice %= 8;
-                }
-                Some(children[choice].sample_internal(morton << 3))
-            }
-            Internal::Leaf(ref item, morton) => Some((*morton, item)),
-            Internal::None => None,
-        }
-    }
-
     /// Get a single random leaf sample from this node (cant be none).
-    fn sample_internal<'a, R: Rng>(&'a self, morton: M) -> (M, &'a T) {
+    fn sample_internal(&self, morton: M) -> (M, &T) {
         match self {
             Internal::Node(box Oct { ref children }) => {
                 let mut choice = morton.get_level(0);
@@ -318,40 +305,23 @@ where
         }
     }
 
-    fn iter_fold_random_cached<'a, E, F, R>(
+    fn iter_fold_random<'a, E, F, R>(
         &'a self,
+        region: MortonRegion<M>,
         depth: usize,
-        mut explore: E,
+        explore: E,
         folder: F,
-        rng: &'a mut R,
-        mut cache: MortonRegionCache<F::Sum, M>,
+        rng: R,
+        cache: MortonRegionCache<F::Sum, M>,
     ) -> impl Iterator<Item = (MortonRegion<M>, F::Sum)> + Into<MortonRegionCache<F::Sum, M>> + 'a
     where
-        R: Rng,
+        R: Rng + 'a,
         E: FnMut(MortonRegion<M>) -> bool + 'a,
         F: Folder<T, M> + 'a,
         F::Sum: Clone,
+        Standard: Distribution<M>,
     {
-        let base_region = MortonRegion::default();
-        match self {
-            Internal::Node(box Oct { ref children }) => {
-                trace!("chose deep due to node");
-                FoldIter::new(children, explore, folder, depth, rng, cache)
-            }
-            Internal::Leaf(ref item, morton) => {
-                trace!("chose shallow due to leaf");
-                let item = cache.get_mut(&base_region).cloned().unwrap_or_else(|| {
-                    let item = folder.gather(*morton, item);
-                    cache.insert(base_region, item.clone());
-                    item
-                });
-                FoldIter::shallow(item, explore, folder, depth, rng, cache)
-            }
-            Internal::None => {
-                trace!("chose empty deep due to None");
-                FoldIter::empty(explore, folder, depth, rng, cache)
-            }
-        }
+        FoldIter::new(self, region, explore, folder, depth, rng, cache)
     }
 
     fn collect_fold<F>(
@@ -367,20 +337,14 @@ where
         match self {
             Internal::Node(box Oct { ref children }) => {
                 if region.level < M::dim_bits() {
-                    if let Some(sum) = folder.sum((0..8).filter_map(|i| {
-                        children[i].iter_gather_deep_linear_hashed_tree_fold(
-                            region.enter(i),
-                            folder,
-                            map,
-                        )
-                    })) {
-                        map.insert(region, sum.clone());
-                        Some(sum)
-                    } else {
-                        None
-                    }
+                    let sum = folder
+                        .fold((0..8).filter_map(|i| {
+                            children[i].collect_fold(region.enter(i), folder, map)
+                        }));
+                    map.insert(region, sum.clone());
+                    Some(sum)
                 } else {
-                    panic!("iter_gather_deep_linear_hashed_tree_fold(): if we get here, then we let a leaf descend pass morton range");
+                    panic!("collect_fold(): if we get here, then we let a leaf descend pass morton range");
                 }
             }
             Internal::Leaf(ref item, morton) => {
@@ -587,23 +551,6 @@ where
             cache,
         }
     }
-
-    fn empty(
-        explore: E,
-        folder: F,
-        depth: usize,
-        rng: R,
-        cache: MortonRegionCache<F::Sum, M>,
-    ) -> Self {
-        FoldIter {
-            nodes: vec![],
-            explore,
-            folder,
-            depth,
-            rng,
-            cache,
-        }
-    }
 }
 
 impl<'a, T, M, E, F, R> Iterator for FoldIter<'a, T, M, E, F, R>
@@ -613,6 +560,7 @@ where
     F: Folder<T, M>,
     F::Sum: Clone,
     R: Rng,
+    Standard: Distribution<M>,
 {
     type Item = (MortonRegion<M>, F::Sum);
 
@@ -623,39 +571,30 @@ where
             if !(self.explore)(region) {
                 trace!("chose not to go further");
                 // If we reach the depth we want or `further` is false, then we must start the random sampling.
-                if let Some(r) = self
-                    .cache
-                    .get_mut(&region)
-                    .cloned()
-                    .or_else(|| {
-                        // We have to make sure this node is not None or else we can't gather it.
-                        // This is because `gather` must be guaranteed that its not passed an empty iterator.
-                        if let Internal::None = node[region.get()] {
-                            None
-                        } else {
-                            Some(&node[region.get()])
-                        }
-                        .map(|n| {
-                            let item = self.gatherer.gather(n.iter_rand(self.depth, self.rng));
+                if let Some(r) = self.cache.get_mut(&region).cloned().or_else(|| {
+                    // We have to make sure this node is not None or else we can't gather it.
+                    // This is because `gather` must be guaranteed that its not passed an empty iterator.
+                    node.fold_rand(self.depth, &self.folder, &mut self.rng)
+                        .map(|item| {
                             self.cache.insert(region, item.clone());
                             item
                         })
-                    })
-                    .map(|item| (region, item))
-                {
-                    return Some(r);
+                }) {
+                    return Some((region, r));
                 }
             } else {
-                match node[region.get()] {
+                match node {
                     Internal::Node(box Oct { ref children }) => {
                         trace!("traversing deeper due to node at level {}", region.level);
                         // Traverse deeper (we already checked if we didn't need to go further).
-                        self.nodes.push((children, region.enter(0)));
+                        for (ix, child) in children.iter().enumerate() {
+                            self.nodes.push((child, region.enter(ix)));
+                        }
                     }
                     Internal::Leaf(ref item, morton) => {
                         trace!("stopping due to leaf at level {}", region.level);
                         let item = self.cache.get_mut(&region).cloned().unwrap_or_else(|| {
-                            let item = self.gatherer.gather(std::iter::once((morton, item)));
+                            let item = self.folder.gather(*morton, item);
                             self.cache.insert(region, item.clone());
                             item
                         });
@@ -677,11 +616,7 @@ where
     M: Morton,
 {
     fn into(self) -> MortonRegionCache<F::Sum, M> {
-        use self::FoldIter::*;
-        match self {
-            Deep(d) => d.into_cache(),
-            Shallow(_, cache) => cache,
-        }
+        self.cache
     }
 }
 

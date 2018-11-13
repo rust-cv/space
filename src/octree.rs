@@ -32,9 +32,9 @@ pub struct NullFolder;
 impl<Item, M> Folder<Item, M> for NullFolder {
     type Sum = ();
 
-    fn gather<'a>(&self, morton: M, item: &'a Item) -> Self::Sum {}
+    fn gather<'a>(&self, _: M, _: &'a Item) -> Self::Sum {}
 
-    fn fold<I>(&self, it: I) -> Self::Sum
+    fn fold<I>(&self, _: I) -> Self::Sum
     where
         I: Iterator<Item = Self::Sum>,
     {

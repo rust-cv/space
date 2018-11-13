@@ -101,13 +101,13 @@ where
     /// This has O(n) (exactly `n`) `gather` operations and O(n) (approximately `8/7 * n`) `fold` operations,
     /// with each gather operation always gathering `1` leaf and each `fold` operation gathering no more
     /// than `8` other fold sums.
-    pub fn collect_fold<F>(&self, folder: F) -> MortonRegionMap<F::Sum, M>
+    pub fn collect_fold<F>(&self, folder: &F) -> MortonRegionMap<F::Sum, M>
     where
         F: Folder<T, M>,
         F::Sum: Clone,
     {
         let mut map = MortonRegionMap::default();
-        self.collect_fold_region(MortonRegion::base(), &folder, &mut map);
+        self.collect_fold_region(MortonRegion::base(), folder, &mut map);
         map
     }
 
