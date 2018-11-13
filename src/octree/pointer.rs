@@ -287,7 +287,7 @@ where
     }
 
     /// Get a single random leaf sample from this node (cant be none).
-    fn sample_internal(&self, morton: M) -> (M, &T) {
+    fn sample(&self, morton: M) -> (M, &T) {
         match self {
             Internal::Node(box Oct { ref children }) => {
                 let mut choice = morton.get_level(0);
@@ -298,7 +298,7 @@ where
                     choice += 1;
                     choice %= 8;
                 }
-                children[choice].sample_internal(morton << 3)
+                children[choice].sample(morton << 3)
             }
             Internal::Leaf(ref item, morton) => (*morton, item),
             Internal::None => unreachable!("can't sample a none node"),
@@ -377,7 +377,7 @@ where
                                 choice += 1;
                                 choice %= 8;
                             }
-                            let (morton, item) = children[choice].sample_internal(morton << 3);
+                            let (morton, item) = children[choice].sample(morton << 3);
                             Some(folder.gather(morton, item))
                         }
                         Internal::Leaf(ref item, morton) => Some(folder.gather(*morton, item)),
