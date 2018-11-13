@@ -14,6 +14,15 @@ impl<M> MortonRegion<M>
 where
     M: Morton,
 {
+    /// This gets the top level region (everything in the finite space).
+    #[inline]
+    pub fn base() -> Self {
+        MortonRegion {
+            morton: M::zero(),
+            level: 0,
+        }
+    }
+
     #[inline]
     pub fn significant_bits(self) -> M {
         self.morton.get_significant_bits(self.level)
@@ -123,10 +132,7 @@ where
 {
     #[inline]
     fn default() -> Self {
-        MortonRegion {
-            morton: M::zero(),
-            level: 0,
-        }
+        MortonRegion::base()
     }
 }
 

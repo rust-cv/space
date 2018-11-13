@@ -10,24 +10,35 @@ use crate::morton::*;
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 
-/// Implement this trait to gather the leaf nodes of an octree in a region.
-pub trait Gatherer<Item, M> {
+/// Implement this trait to perform a tree fold across the octree.
+///
+/// This will convert leaf nodes into the internal `Sum` type and then propogate them up to parent regions by
+/// calling `fold`.
+pub trait Folder<Item, M> {
     type Sum;
 
-    /// `gather` is allowed to assume the `it` gives at least one item.
-    fn gather<'a, I>(&self, it: I) -> Self::Sum
-    where
-        Item: 'a,
-        I: Iterator<Item = (M, &'a Item)>;
-}
+    /// `gather` converts a leaf node into the internal `Sum` type.
+    fn gather<'a>(&self, morton: M, item: &'a Item) -> Self::Sum;
 
-/// Implement this trait to gather subregion changes in the octree into the parent region.
-pub trait Folder {
-    type Sum;
-    /// `sum` is allowed to assume the `it` gives at least one item.
-    fn sum<I>(&self, it: I) -> Option<Self::Sum>
+    /// `fold` is allowed to assume the `it` gives at least one item and no more than 8 items.
+    fn fold<I>(&self, it: I) -> Self::Sum
     where
         I: Iterator<Item = Self::Sum>;
+}
+
+/// Null folder that only produces only tuples.
+pub struct NullFolder;
+
+impl<Item, M> Folder<Item, M> for NullFolder {
+    type Sum = ();
+
+    fn gather<'a>(&self, morton: M, item: &'a Item) -> Self::Sum {}
+
+    fn fold<I>(&self, it: I) -> Self::Sum
+    where
+        I: Iterator<Item = Self::Sum>,
+    {
+    }
 }
 
 /// This defines a region from [-2**n, 2**n).

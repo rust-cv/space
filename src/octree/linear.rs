@@ -1,7 +1,4 @@
-use crate::{
-    morton::*,
-    octree::{Folder, Gatherer},
-};
+use crate::{morton::*, octree::Folder};
 
 /// A linear hashed octree. This has constant time lookup for a given region or morton code.
 #[derive(Clone)]
@@ -104,59 +101,43 @@ where
     /// This has O(n) (exactly `n`) `gather` operations and O(n) (approximately `8/7 * n`) `fold` operations,
     /// with each gather operation always gathering `1` leaf and each `fold` operation gathering no more
     /// than `8` other fold sums.
-    pub fn iter_gather_deep_linear_hashed_tree_fold<G, F>(
-        &self,
-        region: MortonRegion<M>,
-        gatherer: &G,
-        folder: &F,
-    ) -> MortonRegionMap<G::Sum, M>
+    pub fn collect_fold<F>(&self, folder: F) -> MortonRegionMap<F::Sum, M>
     where
-        G: Gatherer<T, M>,
-        F: Folder<Sum = G::Sum>,
-        G::Sum: Clone,
+        F: Folder<T, M>,
+        F::Sum: Clone,
     {
         let mut map = MortonRegionMap::default();
-        self.iter_gather_deep_linear_hashed_tree_fold_map_adder(region, gatherer, folder, &mut map);
+        self.collect_fold_region(MortonRegion::base(), &folder, &mut map);
         map
     }
 
-    /// Same as `iter_gather_deep_linear_hashed_tree_fold`, but adds things to a morton region map rather than
-    /// giving back an iterator.
-    pub fn iter_gather_deep_linear_hashed_tree_fold_map_adder<G, F>(
+    /// Same as `collect_fold`, but adds things to a morton region map and gives back the region.
+    pub fn collect_fold_region<F>(
         &self,
         region: MortonRegion<M>,
-        gatherer: &G,
         folder: &F,
-        map: &mut MortonRegionMap<G::Sum, M>,
-    ) -> Option<G::Sum>
+        map: &mut MortonRegionMap<F::Sum, M>,
+    ) -> Option<F::Sum>
     where
-        G: Gatherer<T, M>,
-        F: Folder<Sum = G::Sum>,
-        G::Sum: Clone,
+        F: Folder<T, M>,
+        F::Sum: Clone,
     {
         match self.internals.get(&region) {
             Some(m) if !m.is_null() => {
                 // This is a leaf node.
-                let sum = gatherer
-                    .gather(std::iter::once(&self.leaves[&MortonWrapper(*m)]).map(|i| (*m, i)));
+                let sum = folder.gather(*m, &self.leaves[&MortonWrapper(*m)]);
                 map.insert(region, sum.clone());
                 Some(sum)
             }
             None => {
                 // This needs to be traversed deeper.
-                if let Some(sum) = folder.sum((0..8).filter_map(|i| {
-                    self.iter_gather_deep_linear_hashed_tree_fold_map_adder(
-                        region.enter(i),
-                        gatherer,
-                        folder,
-                        map,
-                    )
-                })) {
-                    map.insert(region, sum.clone());
-                    Some(sum)
-                } else {
-                    None
-                }
+                let sum =
+                    folder
+                        .fold((0..8).filter_map(|i| {
+                            self.collect_fold_region(region.enter(i), folder, map)
+                        }));
+                map.insert(region, sum.clone());
+                Some(sum)
             }
             _ => None,
         }
