@@ -1,6 +1,6 @@
 [package]
 name = "space"
-version = "0.4.0"
+version = "0.5.0"
 description = "A library for working with spatial trees and point clouds"
 documentation = "https://docs.rs/space/"
 repository = "https://github.com/vadixidav/space"
@@ -16,7 +16,6 @@ num = "0.2.0"
 itertools = "0.7.8"
 either = "1.5.0"
 bitwise = "0.1.1"
-fnv = "1.0.6"
 lru-cache = "0.1.1"
 rand = "0.5.5"
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
