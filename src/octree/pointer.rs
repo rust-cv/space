@@ -356,7 +356,14 @@ where
         }
     }
 
-    fn fold_rand<F, R>(&self, depth: usize, folder: &F, rng: &mut R) -> Option<F::Sum>
+    fn fold_rand<F, R>(
+        &self,
+        region: MortonRegion<M>,
+        depth: usize,
+        folder: &F,
+        cache: &mut MortonRegionCache<F::Sum, M>,
+        rng: &mut R,
+    ) -> Option<F::Sum>
     where
         F: Folder<T, M>,
         F::Sum: Clone,
@@ -365,6 +372,9 @@ where
     {
         match self {
             Internal::Node(box Oct { ref children }) => {
+                if let Some(sum) = cache.get_mut(&region).cloned() {
+                    return Some(sum);
+                }
                 if depth == 0 {
                     let morton = rng.gen();
                     match self {
@@ -378,23 +388,39 @@ where
                                 choice %= 8;
                             }
                             let (morton, item) = children[choice].sample(morton << 3);
-                            Some(folder.gather(morton, item))
+                            let sum = folder.gather(morton, item);
+                            cache.insert(region, sum.clone());
+                            Some(sum)
                         }
-                        Internal::Leaf(ref item, morton) => Some(folder.gather(*morton, item)),
+                        Internal::Leaf(ref item, morton) => {
+                            let sum = folder.gather(*morton, item);
+                            cache.insert(region, sum.clone());
+                            Some(sum)
+                        }
                         Internal::None => None,
                     }
                 } else {
-                    Some(
-                        folder.fold(
-                            children
-                                .iter()
-                                .map(|child| child.fold_rand(depth - 1, folder, rng))
-                                .filter_map(|c| c),
-                        ),
-                    )
+                    let sum = folder.fold(
+                        children
+                            .iter()
+                            .enumerate()
+                            .map(|(ix, child)| {
+                                child.fold_rand(region.enter(ix), depth - 1, folder, cache, rng)
+                            })
+                            .filter_map(|c| c),
+                    );
+                    cache.insert(region, sum.clone());
+                    Some(sum)
                 }
             }
-            Internal::Leaf(ref item, morton) => Some(folder.gather(*morton, item)),
+            Internal::Leaf(ref item, morton) => {
+                let sum = cache.get_mut(&region).cloned().unwrap_or_else(|| {
+                    let sum = folder.gather(*morton, item);
+                    cache.insert(region, sum.clone());
+                    sum
+                });
+                Some(sum)
+            }
             _ => None,
         }
     }
@@ -574,11 +600,17 @@ where
                 if let Some(r) = self.cache.get_mut(&region).cloned().or_else(|| {
                     // We have to make sure this node is not None or else we can't gather it.
                     // This is because `gather` must be guaranteed that its not passed an empty iterator.
-                    node.fold_rand(self.depth, &self.folder, &mut self.rng)
-                        .map(|item| {
-                            self.cache.insert(region, item.clone());
-                            item
-                        })
+                    node.fold_rand(
+                        region,
+                        self.depth,
+                        &self.folder,
+                        &mut self.cache,
+                        &mut self.rng,
+                    )
+                    .map(|item| {
+                        self.cache.insert(region, item.clone());
+                        item
+                    })
                 }) {
                     return Some((region, r));
                 }
