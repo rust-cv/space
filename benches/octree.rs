@@ -75,7 +75,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         .with_function("iteration", |b, &n| {
             let points = random_points(n);
             let octree = octree_insertion(points.iter().cloned().map(|v| (v, 0)));
-            b.iter(move || assert_eq!(octree.iter().count(), n))
+            b.iter(move || octree.iter().count())
         })
         .with_function("full_fold", |b, &n| {
             let points = random_points(n);
