@@ -46,7 +46,7 @@ where
         Self::default()
     }
 
-    /// Insert an item with a point and return the existing item if they would both occupy the same space.
+    /// Insert an item with a point and replace the existing item if they would both occupy the same space.
     pub fn insert(&mut self, morton: M, item: T) {
         // Traverse the tree down to the node we need to operate on.
         let (tree_part, level) = (0..M::dim_bits())
@@ -150,7 +150,7 @@ where
         &'a self,
         folder: F,
         cache: MortonRegionCache<F::Sum, M>,
-    ) -> impl Iterator<Item = (MortonRegion<M>, F::Sum)> + Into<MortonRegionCache<F::Sum, M>> + 'a
+    ) -> FoldIter<'a, T, M, impl FnMut(MortonRegion<M>) -> bool + 'a, F, rand::ThreadRng>
     where
         F: Folder<T, M> + 'a,
         F::Sum: Clone,
@@ -181,7 +181,7 @@ where
         folder: F,
         rng: R,
         cache: MortonRegionCache<F::Sum, M>,
-    ) -> impl Iterator<Item = (MortonRegion<M>, F::Sum)> + Into<MortonRegionCache<F::Sum, M>> + 'a
+    ) -> FoldIter<'a, T, M, E, F, R>
     where
         R: Rng + 'a,
         E: FnMut(MortonRegion<M>) -> bool + 'a,
@@ -313,7 +313,7 @@ where
         folder: F,
         rng: R,
         cache: MortonRegionCache<F::Sum, M>,
-    ) -> impl Iterator<Item = (MortonRegion<M>, F::Sum)> + Into<MortonRegionCache<F::Sum, M>> + 'a
+    ) -> FoldIter<'a, T, M, E, F, R>
     where
         R: Rng + 'a,
         E: FnMut(MortonRegion<M>) -> bool + 'a,

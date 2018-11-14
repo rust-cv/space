@@ -3,7 +3,7 @@ use crate::{morton::*, octree::Folder};
 /// A linear hashed octree. This has constant time lookup for a given region or morton code.
 #[derive(Clone)]
 pub struct Linear<T, M> {
-    /// The leaves of the octree. Uses `SmallVec` because in most cases this shouldn't have more than one element.
+    /// The leaves of the octree.
     leaves: MortonMap<T, M>,
     /// The each internal node either contains a `null` Morton or a non-null Morton which points to a leaf.
     /// Nodes which are not explicity stated implicitly indicate that it must be traversed deeper.
