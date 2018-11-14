@@ -20,8 +20,8 @@ A library that attempts to create good abstractions and implementations for comm
 - Octrees
   - Iteration
   - Gathering data from leaf nodes for internal nodes
-    - Caching variant uses linear hashed octree table to look up.
-      - Random sampling approach to gathering supported (e.g., run a barnes hut simulation, but limit a box's samples)
+    - Uses linear hashed octree LRU cache to speed up gathering.
+    - Random sampling approach to gathering supported (e.g., run a barnes hut simulation, but limit a box's samples)
   - Performing a tree fold from the leaves to the root of the tree
   - Pointer based octrees
   - Linear hashed octrees
@@ -29,7 +29,7 @@ A library that attempts to create good abstractions and implementations for comm
 ## What it should have
 
 - Quering what is in a region (for colision detection)
-  - This can be implemented in an abstract way currently using the `further` parameter to gather operations, but it
+  - This can be implemented in an abstract way currently using the `explore` parameter to gather operations, but it
       convenience wrappers need to be created to search over regions (possibly using combinator functions).
 - k-d trees
 - R trees
