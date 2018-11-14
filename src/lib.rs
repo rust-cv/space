@@ -1,4 +1,4 @@
-#![feature(box_syntax, box_patterns, generators, generator_trait)]
+#![feature(box_syntax, box_patterns)]
 
 pub mod morton;
 pub mod octree;
