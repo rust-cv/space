@@ -7,12 +7,37 @@ use rand::distributions::Open01;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-use space::octree;
+use space::morton::*;
+use space::octree::{self, Folder};
+
+struct PositiveX;
+
+impl<M> Folder<i32, M> for PositiveX
+where
+    M: Morton,
+{
+    type Sum = (usize, usize);
+
+    fn gather(&self, m: M, _: &i32) -> Self::Sum {
+        if m.decode().0 > (M::one() << (M::dim_bits() - 1)) {
+            (1, 0)
+        } else {
+            (0, 1)
+        }
+    }
+
+    fn fold<I>(&self, it: I) -> Self::Sum
+    where
+        I: Iterator<Item = Self::Sum>,
+    {
+        it.fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
+    }
+}
 
 fn octree_insertion<I: IntoIterator<Item = (Vector3<f64>, i32)>>(
     vecs: I,
-) -> octree::Pointer<i32, u128> {
-    let mut octree = octree::Pointer::<_, u128>::new();
+) -> octree::Pointer<i32, u64> {
+    let mut octree = octree::Pointer::<_, u64>::new();
     let space = octree::LeveledRegion(0);
     octree.extend(
         vecs.into_iter()
@@ -51,6 +76,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             let points = random_points(n);
             let octree = octree_insertion(points.iter().cloned().map(|v| (v, 0)));
             b.iter(move || assert_eq!(octree.iter().count(), n))
+        })
+        .with_function("full_fold", |b, &n| {
+            let points = random_points(n);
+            let octree = octree_insertion(points.iter().cloned().map(|v| (v, 0)));
+            b.iter(move || {
+                octree
+                    .iter_fold(
+                        PositiveX,
+                        MortonRegionCache::with_hasher(1, MortonBuildHasher::default()),
+                    )
+                    .count()
+            })
         })
         .sample_size(5)
         .warm_up_time(std::time::Duration::from_millis(1000))
