@@ -292,7 +292,8 @@ impl Hasher for MortonHash {
         let bottom_mask = (1 << CACHE_LOCALITY_BITS) - 1;
         let bottom = i & bottom_mask;
         let top = (i & !bottom_mask) >> CACHE_LOCALITY_BITS;
-        self.value = (top ^ 14695981039346656037).wrapping_mul(1099511628211) + bottom;
+        self.value =
+            ((top ^ 14695981039346656037).wrapping_mul(1099511628211) & !bottom_mask) + bottom;
     }
 
     #[inline(always)]
@@ -301,7 +302,8 @@ impl Hasher for MortonHash {
         let bottom_mask = (1 << CACHE_LOCALITY_BITS) - 1;
         let bottom = i & bottom_mask;
         let top = (i & !bottom_mask) >> CACHE_LOCALITY_BITS;
-        self.value = ((top ^ 14695981039346656037).wrapping_mul(1099511628211) + bottom) as u64;
+        self.value = (((top ^ 14695981039346656037).wrapping_mul(1099511628211) & !bottom_mask)
+            + bottom) as u64;
     }
 
     fn write_usize(&mut self, _: usize) {
