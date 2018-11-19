@@ -11,13 +11,76 @@ use bitwise::morton;
 use num::{FromPrimitive, PrimInt, ToPrimitive};
 use std::hash::{Hash, Hasher};
 
+/// Use this to map regions defined by a z-order curve on a particular level to arbitrary objects.
+/// This uses a custom hasher that is optimized for z-order data locality.
 pub type MortonRegionMap<T, M> = std::collections::HashMap<MortonRegion<M>, T, MortonBuildHasher>;
+/// Use this to have a set of regions defined by a z-order curve on a particular level.
+/// This will not exclude subset regions.
+/// This uses a custom hasher that is optimized for z-order data locality.
 pub type MortonRegionSet<M> = std::collections::HashSet<MortonRegion<M>, MortonBuildHasher>;
+/// Use this to map voxels in z-order to arbitrary objects.
+/// This uses a custom hasher that is optimized for z-order data locality.
 pub type MortonMap<T, M> = std::collections::HashMap<MortonWrapper<M>, T, MortonBuildHasher>;
+/// Use this to keep a set of voxels in z-order.
+/// This uses a custom hasher that is optimized for z-order data locality.
 pub type MortonSet<M> = std::collections::HashSet<MortonWrapper<M>, MortonBuildHasher>;
 
+/// Use this to map regions defined by a z-order curve on a particular level to arbitrary objects.
+/// This uses a custom hasher that is optimized for z-order data locality.
+/// This also uses an LRU cache under the hood so memory can be preserved.
 pub type MortonRegionCache<T, M> = lru_cache::LruCache<MortonRegion<M>, T, MortonBuildHasher>;
+/// Use this to map voxels in z-order to arbitrary objects.
+/// This uses a custom hasher that is optimized for z-order data locality.
+/// This also uses an LRU cache under the hood so memory can be preserved.
 pub type MortonCache<T, M> = lru_cache::LruCache<MortonWrapper<M>, T, MortonBuildHasher>;
+
+/// Create a `MortonRegionMap`.
+pub fn region_map<T, M>() -> MortonRegionMap<T, M>
+where
+    M: Morton,
+{
+    MortonRegionMap::default()
+}
+
+/// Create a `MortonRegionSet`.
+pub fn region_set<M>() -> MortonRegionSet<M>
+where
+    M: Morton,
+{
+    MortonRegionSet::default()
+}
+
+/// Create a `MortonMap`.
+pub fn morton_map<T, M>() -> MortonMap<T, M>
+where
+    M: Morton,
+{
+    MortonMap::default()
+}
+
+/// Create a `MortonSet`.
+pub fn morton_set<T, M>() -> MortonSet<M>
+where
+    M: Morton,
+{
+    MortonSet::default()
+}
+
+/// Create a `MortonRegionCache`.
+pub fn region_cache<T, M>(size: usize) -> MortonRegionCache<T, M>
+where
+    M: Morton,
+{
+    MortonRegionCache::with_hasher(size, MortonBuildHasher::default())
+}
+
+/// Create a `MortonCache`.
+pub fn morton_cache<T, M>(size: usize) -> MortonCache<T, M>
+where
+    M: Morton,
+{
+    MortonCache::with_hasher(size, MortonBuildHasher::default())
+}
 
 /// Visits the values representing the difference, i.e. the keys that are in `primary` but not in `secondary`.
 pub fn region_map_difference<'a, T, U, M>(
@@ -39,6 +102,7 @@ where
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized,
 /// linear boxes. This morton code is always encoding 3 dimensional data.
 pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash {
+    /// This is the total number of bits in the primitive.
     const BITS: usize;
 
     /// Encode the three dimensions (x, y, z) into a morton code.
@@ -180,6 +244,7 @@ impl Morton for u128 {
     }
 }
 
+/// The `BuildHasher` for `MortonHash`.
 pub type MortonBuildHasher = std::hash::BuildHasherDefault<MortonHash>;
 
 /// This const determines how many significant bits from the morton get added into the hash instead of multiplied
@@ -190,7 +255,8 @@ pub type MortonBuildHasher = std::hash::BuildHasherDefault<MortonHash>;
 const CACHE_LOCALITY_BITS: usize = 3;
 
 /// This is not to be used with anything other than a morton code, as it depends on its unique structure.
-/// This is not enforced at compile time currently.
+/// It is safe to use it with other data, but it wont perform well at all and may eat tons of memory.
+/// Use at your own risk.
 #[derive(Copy, Clone, Default)]
 pub struct MortonHash {
     value: u64,
@@ -223,8 +289,6 @@ impl Hasher for MortonHash {
     #[inline(always)]
     #[allow(clippy::unreadable_literal)]
     fn write_u64(&mut self, i: u64) {
-        // TODO: Investigate if masking out the bottom bits from the FNV improves cache line alignment/speed
-        // in benchmarks.
         let bottom_mask = (1 << CACHE_LOCALITY_BITS) - 1;
         let bottom = i & bottom_mask;
         let top = (i & !bottom_mask) >> CACHE_LOCALITY_BITS;

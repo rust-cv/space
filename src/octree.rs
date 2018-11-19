@@ -15,6 +15,7 @@ use num::{Float, FromPrimitive, ToPrimitive};
 /// This will convert leaf nodes into the internal `Sum` type and then propogate them up to parent regions by
 /// calling `fold`.
 pub trait Folder<Item, M> {
+    /// This is the type that `gather` and `fold` will produce and acts as the accumulator.
     type Sum;
 
     /// `gather` converts a leaf node into the internal `Sum` type.

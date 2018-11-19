@@ -28,6 +28,7 @@ impl<T, M> Linear<T, M>
 where
     M: Morton,
 {
+    /// Create an empty linear octree.
     pub fn new() -> Self {
         Default::default()
     }

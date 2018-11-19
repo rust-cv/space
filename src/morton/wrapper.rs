@@ -3,6 +3,12 @@ use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 use std::hash::{Hash, Hasher};
 
+/// This wraps a morton to convey special external trait implementations to it that are specific to mortons.
+///
+/// This includes:
+/// - `Hash`
+/// - `From<Vector3<S>>`
+/// - `Into<Vector3<S>>`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MortonWrapper<M>(pub M);
 

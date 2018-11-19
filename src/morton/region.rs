@@ -4,9 +4,17 @@ use num::{Float, FromPrimitive, ToPrimitive};
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use std::hash::{Hash, Hasher};
 
+/// Defines a region by dividing finite space into a z-order curve of `level` and uses the upper bits of `morton`.
 #[derive(Debug, Clone, Copy)]
 pub struct MortonRegion<M> {
+    /// The most significant `level * 3` bits of this morton encode the voxel of the z-order curve this is a part of.
     pub morton: M,
+    /// This defines the level of the z-order curve.
+    ///
+    /// A `level` of `0` is the whole space.
+    /// A `level` of `1` means the region is one of the 8 top level octants of the space.
+    /// If the `level` is equal to `M::dim_bits()`, then the entire morton is used.
+    /// Level cannot exceed `M::dim_bits()` or there wont be enough bits to encode the morton.
     pub level: usize,
 }
 
@@ -23,31 +31,41 @@ where
         }
     }
 
+    /// Get the bits that are actually used to encode different levels in the morton.
     #[inline]
     pub fn significant_bits(self) -> M {
         self.morton.get_significant_bits(self.level)
     }
 
+    /// Enter an octant in the region.
+    ///
+    /// Note that this does not mutate the region, but returns a new one. This can be reversed by calling `exit()`.
     #[inline]
-    pub fn enter(mut self, section: usize) -> Self {
-        self.morton.set_level(self.level, section);
+    pub fn enter(mut self, octant: usize) -> Self {
+        self.morton.set_level(self.level, octant);
         self.level += 1;
         self
     }
 
+    /// Changes the region to its parent region by going up one level.
     #[inline]
     pub fn exit(&mut self) -> usize {
         self.level -= 1;
         let old = self.morton.get_level(self.level);
+        // This is not totally necessary, but it resets the level to ensure unused bits are `0`.
         self.morton.reset_level(self.level);
         old
     }
 
+    /// Gets the least-significant octant of the region.
     #[inline]
     pub fn get(&self) -> usize {
         self.morton.get_level(self.level - 1)
     }
 
+    /// Gets the next octant when iterating in z-order over the least significant octant.
+    ///
+    /// This gives back None when it is on the last octant or if the level is `0`, in which case it is the whole space.
     #[inline]
     pub fn next(mut self) -> Option<Self> {
         if self.level == 0 {
@@ -70,6 +88,17 @@ where
             M::zero()
         } else {
             (self.morton | M::unused_bits()).get_significant_bits(self.level - 1)
+        }
+    }
+
+    /// Iterates over subregions of a region. Uses `explore` to limit the exploration space.
+    pub fn iter<E>(self, explore: E) -> MortonRegionIterator<M, E>
+    where
+        E: FnMut(MortonRegion<M>) -> bool,
+    {
+        MortonRegionIterator {
+            nodes: vec![self],
+            explore,
         }
     }
 }
@@ -170,6 +199,8 @@ where
     }
 }
 
+/// Generates regions over every level of this morton from the first octant (`level` `1`)
+/// to the least significant level (`level` `M::dim_bits()`). This does not include the root region (`level` `0`).
 #[inline]
 pub fn morton_levels<M>(m: M) -> impl Iterator<Item = MortonRegion<M>>
 where
@@ -181,74 +212,32 @@ where
     }))
 }
 
-pub struct MortonRegionIterator<'a, T, M> {
+/// An `Iterator` over a `MortonRegion` that uses a closure to limit the exploration space.
+///
+/// Produced by `MortonRegion::iter`.
+pub struct MortonRegionIterator<M, E> {
     nodes: Vec<MortonRegion<M>>,
-    limit: usize,
-    map: &'a MortonRegionMap<T, M>,
+    explore: E,
 }
 
-impl<'a, T, M> MortonRegionIterator<'a, T, M> {
-    /// Takes a region to iterate over the regions within it and a limit for the depth level.
-    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<M>, limit: usize, map: &'a MortonRegionMap<T, M>) -> Self {
-        // Enough capacity for all the regions.
-        let mut nodes = Vec::with_capacity(limit);
-        nodes.push(region);
-        MortonRegionIterator { nodes, limit, map }
-    }
-}
-
-impl<'a, T, M> Iterator for MortonRegionIterator<'a, T, M>
+impl<M, E> MortonRegionIterator<M, E>
 where
-    M: Morton,
+    E: FnMut(MortonRegion<M>) -> bool,
 {
-    type Item = (MortonRegion<M>, &'a T);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(region) = self.nodes.pop() {
-            // Then update the region for the next iteration.
-            if let Some(next) = region.next() {
-                self.nodes.push(next);
-            }
-
-            // Now try to retrieve this region from the map.
-            if let Some(item) = self.map.get(&region) {
-                // It worked, so we need to descend into this region further.
-                // Only do this so long as the level wouldn't exceed the limit.
-                if region.level < self.limit {
-                    self.nodes.push(region.enter(0));
-                }
-                return Some((region, item));
-            }
-        }
-        None
-    }
-}
-
-pub struct MortonRegionFurtherLinearIterator<M, F> {
-    nodes: Vec<MortonRegion<M>>,
-    further: F,
-}
-
-impl<M, F> MortonRegionFurtherLinearIterator<M, F>
-where
-    F: FnMut(MortonRegion<M>) -> bool,
-{
-    /// Takes a region to iterate over the regions within it and a limit for the depth level.
+    /// Takes a region to iterate over and a closure to limit the exploration space.
     /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<M>, further: F) -> Self {
-        MortonRegionFurtherLinearIterator {
+    pub fn new(region: MortonRegion<M>, explore: E) -> Self {
+        MortonRegionIterator {
             nodes: vec![region],
-            further,
+            explore,
         }
     }
 }
 
-impl<M, F> Iterator for MortonRegionFurtherLinearIterator<M, F>
+impl<M, E> Iterator for MortonRegionIterator<M, E>
 where
     M: Morton,
-    F: FnMut(MortonRegion<M>) -> bool,
+    E: FnMut(MortonRegion<M>) -> bool,
 {
     type Item = MortonRegion<M>;
 
@@ -260,125 +249,11 @@ where
                 self.nodes.push(next);
             }
 
-            // Check if we should descend further.
-            if region.level < M::dim_bits() && (self.further)(region) {
+            // Check if we should explore this sub region.
+            if region.level < M::dim_bits() && (self.explore)(region) {
                 self.nodes.push(region.enter(0));
             }
             region
         })
-    }
-}
-
-pub struct MortonRegionFurtherIterator<'a, T, M, F> {
-    nodes: Vec<MortonRegion<M>>,
-    further: F,
-    map: &'a MortonRegionMap<T, M>,
-}
-
-impl<'a, T, M, F> MortonRegionFurtherIterator<'a, T, M, F>
-where
-    F: FnMut(MortonRegion<M>) -> bool,
-{
-    /// Takes a region to iterate over the regions within it and a limit for the depth level.
-    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<M>, further: F, map: &'a MortonRegionMap<T, M>) -> Self {
-        MortonRegionFurtherIterator {
-            nodes: vec![region],
-            further,
-            map,
-        }
-    }
-}
-
-impl<'a, T, M, F> Iterator for MortonRegionFurtherIterator<'a, T, M, F>
-where
-    M: Morton,
-    F: FnMut(MortonRegion<M>) -> bool,
-{
-    type Item = (MortonRegion<M>, &'a T);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(region) = self.nodes.pop() {
-            // Then update the region for the next iteration.
-            if let Some(next) = region.next() {
-                self.nodes.push(next);
-            }
-
-            // Now try to retrieve this region from the map.
-            if let Some(item) = self.map.get(&region) {
-                // It worked, so we need to descend into this region further.
-                // Only do this so long as the level wouldn't exceed the limit.
-                if (self.further)(region) {
-                    self.nodes.push(region.enter(0));
-                }
-                return Some((region, item));
-            }
-        }
-        None
-    }
-}
-
-pub struct MortonRegionFurtherLeavesIterator<'a, T, M, F> {
-    nodes: Vec<(MortonRegion<M>, bool)>,
-    further: F,
-    map: &'a MortonRegionMap<T, M>,
-}
-
-impl<'a, T, M, F> MortonRegionFurtherLeavesIterator<'a, T, M, F>
-where
-    F: FnMut(MortonRegion<M>) -> bool,
-{
-    /// Takes a region to iterate over the regions within it and a limit for the depth level.
-    /// This will traverse through `8/7 * 8^(limit - region.level)` nodes, so mind the limit.
-    pub fn new(region: MortonRegion<M>, further: F, map: &'a MortonRegionMap<T, M>) -> Self {
-        MortonRegionFurtherLeavesIterator {
-            nodes: vec![(region, false)],
-            further,
-            map,
-        }
-    }
-}
-
-impl<'a, T, M, F> Iterator for MortonRegionFurtherLeavesIterator<'a, T, M, F>
-where
-    M: Morton,
-    F: FnMut(MortonRegion<M>) -> bool,
-{
-    type Item = (MortonRegion<M>, &'a T);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some((region, had_child)) = self.nodes.pop() {
-            // Then update the region for the next iteration.
-            // Also get whether this is the last iteration of this child.
-            let last = if let Some(next) = region.next() {
-                self.nodes.push((next, had_child));
-                false
-            } else {
-                true
-            };
-
-            // Now try to retrieve this region from the map.
-            if let Some(item) = self.map.get(&region) {
-                // Let the parent node know it had a child.
-                if let Some((_, ref mut had_child)) = self.nodes.last_mut() {
-                    *had_child = true;
-                }
-                // It worked, so we need to descend into this region further.
-                // Only do this so long as the level wouldn't exceed the limit.
-                if (self.further)(region) && region.level < M::dim_bits() - 1 {
-                    self.nodes.push((region.enter(0), false));
-                } else {
-                    return Some((region, item));
-                }
-            } else if last && !had_child {
-                let mut parent_region = region;
-                parent_region.exit();
-                // If the parent failed to retrieve the child region and its the last child, it was a leaf.
-                return Some((parent_region, self.map.get(&parent_region).unwrap()));
-            }
-        }
-        None
     }
 }
