@@ -82,6 +82,18 @@ where
     MortonCache::with_hasher(size, MortonBuildHasher::default())
 }
 
+/// Invalidates pieces of a cache when something is changed at this particular morton.
+pub fn invalidate_region_cache<T, M>(morton: M, cache: &mut MortonRegionCache<T, M>)
+where
+    M: Morton,
+{
+    // Also remove the base region.
+    cache.remove(&MortonRegion::base());
+    for region in morton_levels(morton) {
+        cache.remove(&region);
+    }
+}
+
 /// Visits the values representing the difference, i.e. the keys that are in `primary` but not in `secondary`.
 pub fn region_map_difference<'a, T, U, M>(
     primary: &'a MortonRegionMap<T, M>,
