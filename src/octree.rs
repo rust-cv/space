@@ -48,6 +48,14 @@ pub struct LeveledRegion(pub i32);
 
 impl LeveledRegion {
     /// This allows the discretization of a `Vector3` `point` to a morton code using the region.
+    ///
+    /// ```
+    /// let region = space::octree::LeveledRegion(0);
+    /// // This is inside the bounds, so it gives back `Some(morton)`.
+    /// let m = region.discretize::<f32, u64>(nalgebra::Vector3::new(0.5, 0.5, 0.5)).unwrap();
+    /// // This is outside the bounds, so it gives back `None`.
+    /// assert!(region.discretize::<f32, u64>(nalgebra::Vector3::new(1.5, 1.5, 1.5)).is_none());
+    /// ```
     pub fn discretize<S, M>(self, point: Vector3<S>) -> Option<M>
     where
         S: Float + ToPrimitive + FromPrimitive + std::fmt::Debug + 'static,
