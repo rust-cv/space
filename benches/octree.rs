@@ -7,8 +7,7 @@ use rand::distributions::Open01;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-use space::morton::*;
-use space::octree::{self, Folder};
+use space::*;
 
 struct PositiveX;
 
@@ -36,9 +35,9 @@ where
 
 fn octree_insertion<I: IntoIterator<Item = (Vector3<f64>, i32)>>(
     vecs: I,
-) -> octree::Pointer<i32, u64> {
-    let mut octree = octree::Pointer::<_, u64>::new();
-    let space = octree::LeveledRegion(0);
+) -> PointerOctree<i32, u64> {
+    let mut octree = PointerOctree::<_, u64>::new();
+    let space = LeveledRegion(0);
     octree.extend(
         vecs.into_iter()
             .map(|(v, i)| (space.discretize(v).unwrap(), i)),

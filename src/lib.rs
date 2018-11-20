@@ -11,5 +11,8 @@
 #![feature(box_syntax, box_patterns)]
 #![deny(missing_docs)]
 
-pub mod morton;
-pub mod octree;
+mod morton;
+mod octree;
+
+pub use self::morton::*;
+pub use self::octree::*;

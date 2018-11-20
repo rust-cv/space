@@ -1,8 +1,8 @@
-use crate::{morton::*, octree::Folder};
+use crate::*;
 
 /// A linear hashed octree. This has constant time lookup for a given region or morton code.
 #[derive(Clone)]
-pub struct Linear<T, M> {
+pub struct LinearOctree<T, M> {
     /// The leaves of the octree.
     leaves: MortonMap<T, M>,
     /// The each internal node either contains a `null` Morton or a non-null Morton which points to a leaf.
@@ -10,21 +10,21 @@ pub struct Linear<T, M> {
     internals: MortonRegionMap<M, M>,
 }
 
-impl<T, M> Default for Linear<T, M>
+impl<T, M> Default for LinearOctree<T, M>
 where
     M: Morton,
 {
     fn default() -> Self {
         let mut internals = MortonRegionMap::default();
         internals.insert(MortonRegion::default(), M::null());
-        Linear {
+        LinearOctree {
             leaves: MortonMap::<_, M>::default(),
             internals,
         }
     }
 }
 
-impl<T, M> Linear<T, M>
+impl<T, M> LinearOctree<T, M>
 where
     M: Morton,
 {
@@ -145,7 +145,7 @@ where
     }
 }
 
-impl<T, M> Extend<(M, T)> for Linear<T, M>
+impl<T, M> Extend<(M, T)> for LinearOctree<T, M>
 where
     M: Morton + Default,
 {

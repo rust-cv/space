@@ -1,4 +1,4 @@
-use super::*;
+use crate::*;
 use nalgebra::Vector3;
 use num::{Float, FromPrimitive, ToPrimitive};
 use std::hash::{Hash, Hasher};

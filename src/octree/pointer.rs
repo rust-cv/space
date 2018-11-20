@@ -1,5 +1,4 @@
-use crate::morton::*;
-use crate::octree::*;
+use crate::*;
 
 use itertools::Itertools;
 
@@ -23,21 +22,21 @@ impl<T> Oct<T> {
 }
 
 /// An octree that uses pointers for internal nodes.
-pub struct Pointer<T, M> {
+pub struct PointerOctree<T, M> {
     tree: Internal<T, M>,
     count: usize,
 }
 
-impl<T, M> Default for Pointer<T, M> {
+impl<T, M> Default for PointerOctree<T, M> {
     fn default() -> Self {
-        Pointer {
+        PointerOctree {
             tree: Internal::default(),
             count: 0,
         }
     }
 }
 
-impl<T, M> Pointer<T, M>
+impl<T, M> PointerOctree<T, M>
 where
     M: Morton,
 {
@@ -217,7 +216,7 @@ where
     }
 }
 
-impl<T, M> Extend<(M, T)> for Pointer<T, M>
+impl<T, M> Extend<(M, T)> for PointerOctree<T, M>
 where
     M: Morton,
 {
@@ -667,7 +666,7 @@ mod tests {
         let mut yrng = SmallRng::from_seed([4; 16]);
         let mut zrng = SmallRng::from_seed([0; 16]);
 
-        let mut octree = Pointer::<_, u128>::new();
+        let mut octree = PointerOctree::<_, u128>::new();
         let space = LeveledRegion(0);
         octree.extend(
             izip!(

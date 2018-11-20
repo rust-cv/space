@@ -3,8 +3,8 @@
 mod linear;
 mod pointer;
 
-pub use self::linear::Linear;
-pub use self::pointer::Pointer;
+pub use self::linear::LinearOctree;
+pub use self::pointer::PointerOctree;
 
 use crate::morton::*;
 use nalgebra::Vector3;
@@ -48,13 +48,16 @@ pub struct LeveledRegion(pub i32);
 
 impl LeveledRegion {
     /// This allows the discretization of a `Vector3` `point` to a morton code using the region.
+    /// If the point is not in the region it gives back `None`.
     ///
     /// ```
-    /// let region = space::octree::LeveledRegion(0);
+    /// let region = space::LeveledRegion(0);
     /// // This is inside the bounds, so it gives back `Some(morton)`.
-    /// let m = region.discretize::<f32, u64>(nalgebra::Vector3::new(0.5, 0.5, 0.5)).unwrap();
+    /// let inside_bounds = nalgebra::Vector3::new(0.5, 0.5, 0.5);
+    /// assert!(region.discretize::<f32, u64>(inside_bounds).is_some());
     /// // This is outside the bounds, so it gives back `None`.
-    /// assert!(region.discretize::<f32, u64>(nalgebra::Vector3::new(1.5, 1.5, 1.5)).is_none());
+    /// let outside_bounds = nalgebra::Vector3::new(1.5, 1.5, 1.5);
+    /// assert!(region.discretize::<f32, u64>(outside_bounds).is_none());
     /// ```
     pub fn discretize<S, M>(self, point: Vector3<S>) -> Option<M>
     where
