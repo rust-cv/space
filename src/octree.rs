@@ -27,6 +27,24 @@ pub trait Folder<Item, M> {
         I: Iterator<Item = Self::Sum>;
 }
 
+impl<Item, M, F> Folder<Item, M> for &F
+where
+    F: Folder<Item, M>,
+{
+    type Sum = F::Sum;
+
+    fn gather<'a>(&self, morton: M, item: &'a Item) -> Self::Sum {
+        (*self).gather(morton, item)
+    }
+
+    fn fold<I>(&self, it: I) -> Self::Sum
+    where
+        I: Iterator<Item = Self::Sum>,
+    {
+        (*self).fold(it)
+    }
+}
+
 /// Null folder that only produces only tuples.
 pub struct NullFolder;
 

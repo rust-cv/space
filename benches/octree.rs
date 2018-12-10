@@ -60,7 +60,7 @@ fn random_points(num: usize) -> Vec<Vector3<f64>> {
     .collect()
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn points(c: &mut Criterion) {
     c.bench(
         "octree",
         ParameterizedBenchmark::new(
@@ -94,5 +94,5 @@ fn criterion_benchmark(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, points);
 criterion_main!(benches);
