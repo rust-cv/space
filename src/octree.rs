@@ -45,6 +45,81 @@ where
     }
 }
 
+macro_rules! tuple_folder {
+    ({$($id: ident),* $(,)?}, {$($sm: ident),* $(,)?}, {$($acc: ident),* $(,)?}, {$($item: ident),* $(,)?}) => {
+        #[allow(non_snake_case)]
+        impl <Item, M, $($id:),*> Folder<Item, M> for ($($id),*)
+            where M: Morton, $($id: Folder<Item, M>,)*
+        {
+            type Sum = ($($id::Sum),*);
+
+            fn gather<'a>(&self, morton: M, item: &'a Item) -> Self::Sum {
+                let ($(ref $id),*) = *self;
+                ($($id.gather(morton, item)),*)
+            }
+
+            fn fold<IT>(&self, it: IT) -> Self::Sum
+            where
+                IT: Iterator<Item = Self::Sum>,
+            {
+                let ($($sm),*): ($(smallvec::SmallVec<[$id::Sum; 8]>),*) =
+                    it.fold(<($(smallvec::SmallVec<[$id::Sum; 8]>),*)>::default(),
+                            |($(mut $acc),*), ($($item),*)| {
+                                $($acc.push($item);)*
+                                ($($acc),*)
+                            });
+                let ($(ref $id),*) = *self;
+                ($($id.fold($sm.into_iter())),*)
+            }
+        }
+    }
+}
+
+tuple_folder!({A, B},
+              {A_sm, B_sm},
+              {A_acc, B_acc},
+              {A_item, B_item});
+tuple_folder!({A, B, C},
+              {A_sm, B_sm, C_sm},
+              {A_acc, B_acc, C_acc},
+              {A_item, B_item, C_item});
+tuple_folder!({A, B, C, D},
+              {A_sm, B_sm, C_sm, D_sm},
+              {A_acc, B_acc, C_acc, D_acc},
+              {A_item, B_item, C_item, D_item});
+tuple_folder!({A, B, C, D, E},
+              {A_sm, B_sm, C_sm, D_sm, E_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc},
+              {A_item, B_item, C_item, D_item, E_item});
+tuple_folder!({A, B, C, D, E, F},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item});
+tuple_folder!({A, B, C, D, E, F, G},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm, G_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc, G_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item, G_item});
+tuple_folder!({A, B, C, D, E, F, G, H},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm, G_sm, H_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc, G_acc, H_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item, G_item, H_item});
+tuple_folder!({A, B, C, D, E, F, G, H, I},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm, G_sm, H_sm, I_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc, G_acc, H_acc, I_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item, G_item, H_item, I_item});
+tuple_folder!({A, B, C, D, E, F, G, H, I, J},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm, G_sm, H_sm, I_sm, J_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc, G_acc, H_acc, I_acc, J_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item, G_item, H_item, I_item, J_item});
+tuple_folder!({A, B, C, D, E, F, G, H, I, J, K},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm, G_sm, H_sm, I_sm, J_sm, K_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc, G_acc, H_acc, I_acc, J_acc, K_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item, G_item, H_item, I_item, J_item, K_item});
+tuple_folder!({A, B, C, D, E, F, G, H, I, J, K, L},
+              {A_sm, B_sm, C_sm, D_sm, E_sm, F_sm, G_sm, H_sm, I_sm, J_sm, K_sm, L_sm},
+              {A_acc, B_acc, C_acc, D_acc, E_acc, F_acc, G_acc, H_acc, I_acc, J_acc, K_acc, L_acc},
+              {A_item, B_item, C_item, D_item, E_item, F_item, G_item, H_item, I_item, J_item, K_item, L_item});
+
 /// Null folder that only produces only tuples.
 pub struct NullFolder;
 

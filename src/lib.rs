@@ -8,7 +8,7 @@
 //!
 //! This crate will not be 1.0 until it has removed all dependencies on nightly features and const generics
 //! are available in stable to allow the abstraction over N-dimensional trees.
-#![feature(box_syntax, box_patterns)]
+#![feature(box_syntax, box_patterns, concat_idents)]
 #![deny(missing_docs)]
 
 mod morton;
