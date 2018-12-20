@@ -194,12 +194,13 @@ where
 
     /// This gathers the tree into a linear hashed octree map. This map contains every internal and leaf node
     /// as the sum type that the `folder` produces.
-    pub fn collect_fold<F>(&self, folder: &F) -> MortonRegionMap<F::Sum, M>
+    pub fn collect_fold<E, F>(&self, folder: &F) -> E
     where
         F: Folder<T, M>,
         F::Sum: Clone,
+        E: Extend<(MortonRegion<M>, F::Sum)> + Default,
     {
-        let mut map = MortonRegionMap::with_hasher(MortonBuildHasher::default());
+        let mut map = E::default();
         self.tree
             .collect_fold(MortonRegion::base(), folder, &mut map);
         map
@@ -323,15 +324,11 @@ where
         FoldIter::new(self, region, explore, folder, depth, rng, cache)
     }
 
-    fn collect_fold<F>(
-        &self,
-        region: MortonRegion<M>,
-        folder: &F,
-        map: &mut MortonRegionMap<F::Sum, M>,
-    ) -> Option<F::Sum>
+    fn collect_fold<E, F>(&self, region: MortonRegion<M>, folder: &F, map: &mut E) -> Option<F::Sum>
     where
         F: Folder<T, M>,
         F::Sum: Clone,
+        E: Extend<(MortonRegion<M>, F::Sum)> + Default,
     {
         match self {
             Internal::Node(box Oct { ref children }) => {
@@ -340,7 +337,7 @@ where
                         .fold((0..8).filter_map(|i| {
                             children[i].collect_fold(region.enter(i), folder, map)
                         }));
-                    map.insert(region, sum.clone());
+                    map.extend(std::iter::once((region, sum.clone())));
                     Some(sum)
                 } else {
                     panic!("collect_fold(): if we get here, then we let a leaf descend pass morton range");
@@ -348,7 +345,7 @@ where
             }
             Internal::Leaf(ref item, morton) => {
                 let sum = folder.gather(*morton, item);
-                map.insert(region, sum.clone());
+                map.extend(std::iter::once((region, sum.clone())));
                 Some(sum)
             }
             _ => None,
