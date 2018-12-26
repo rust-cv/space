@@ -19,6 +19,7 @@ bitwise = "0.1.1"
 lru-cache = "0.1.1"
 rand = "0.5.5"
 smallvec = "0.6.7"
+bitintr = "0.2.0"
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 
 [dev-dependencies]

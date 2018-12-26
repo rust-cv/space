@@ -7,6 +7,7 @@ pub use self::morton::*;
 pub use self::region::*;
 pub use self::wrapper::*;
 
+use bitintr::Pdep;
 use bitwise::morton;
 use num::{FromPrimitive, PrimInt, ToPrimitive};
 use std::hash::{Hash, Hasher};
@@ -214,13 +215,16 @@ impl Morton for u64 {
     const BITS: usize = 64;
 
     #[inline]
+    #[allow(clippy::unreadable_literal)]
     fn encode(x: Self, y: Self, z: Self) -> Self {
-        morton::encode_3d(x, y, z) & Self::used_bits()
+        z.pdep(0x4924924924924924u64)
+            | y.pdep(0x2492492492492492u64)
+            | x.pdep(0x9249249249249249u64)
     }
 
     #[inline]
     fn decode(self) -> (Self, Self, Self) {
-        morton::decode_3d(self)
+        morton::bmi2::decode_3d(self)
     }
 }
 
