@@ -1,6 +1,28 @@
 use crate::*;
 
 /// A linear hashed octree. This has constant time lookup for a given region or morton code.
+///
+/// ```
+/// use space::*;
+///
+/// let mut tree = LinearOctree::<String, u64>::new();
+///
+/// let region = space::LeveledRegion(0);
+/// let morton = region.discretize::<f32, u64>(nalgebra::Vector3::new(0.5, 0.5, 0.5)).unwrap();
+///
+/// // Insert a value into the tree
+/// tree.insert(morton, "test1".to_string() );
+///
+/// // Fetch a value at a specific coordinate
+/// let fetched_value = tree.get(morton);
+/// assert_eq!("test1", *fetched_value.unwrap());
+///
+/// // Fetch a value that doesnt exist
+/// let morton_empty = region.discretize::<f32, u64>(nalgebra::Vector3::new(0.1, 0.1, 0.1)).unwrap();
+/// let fetched_value = tree.get(morton_empty);
+/// assert!(fetched_value.is_none());
+///
+/// ```
 #[derive(Clone)]
 pub struct LinearOctree<T, M> {
     /// The leaves of the octree.
@@ -95,6 +117,11 @@ where
                 }
             }
         }
+    }
+
+    /// Fetches a value at a specific coordinate in the octree
+    pub fn get(&mut self, morton: M) -> Option<&T> {
+        self.leaves.get(&MortonWrapper(morton))
     }
 
     /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
