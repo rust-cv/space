@@ -43,15 +43,15 @@ where
 {
     #[inline]
     fn from(point: Vector3<S>) -> Self {
-        let point = point.map(|x| {
+        let point = point.map(|d| {
             M::from_u64(
-                (x * (S::one() + S::one()).powi(M::dim_bits() as i32))
+                (d * (S::one() + S::one()).powi(M::dim_bits() as i32))
                     .to_u64()
                     .unwrap(),
             )
             .unwrap()
         });
-        MortonWrapper(M::encode(point.x, point.y, point.z))
+        MortonWrapper(M::encode(point))
     }
 }
 
@@ -62,13 +62,11 @@ where
 {
     #[inline]
     fn into(self) -> Vector3<S> {
-        let (x, y, z) = self.0.decode();
+        let point = self.0.decode();
         let scale = (S::one() + S::one()).powi(-(M::dim_bits() as i32));
 
-        Vector3::new(
-            (S::from_u64(x.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale,
-            (S::from_u64(y.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale,
-            (S::from_u64(z.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale,
-        )
+        point.map(|d| {
+            (S::from_u64(d.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale
+        })
     }
 }
