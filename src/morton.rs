@@ -9,6 +9,7 @@ pub use self::wrapper::*;
 
 use bitintr::Pdep;
 use bitwise::morton;
+use nalgebra::Vector3;
 use num::{FromPrimitive, PrimInt, ToPrimitive};
 use std::hash::{Hash, Hasher};
 
@@ -114,14 +115,14 @@ where
 
 /// Also known as a Z-order encoding, this partitions a bounded space into finite, but localized,
 /// linear boxes. This morton code is always encoding 3 dimensional data.
-pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash {
+pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash + std::fmt::Debug + 'static {
     /// This is the total number of bits in the primitive.
     const BITS: usize;
 
     /// Encode the three dimensions (x, y, z) into a morton code.
-    fn encode(x: Self, y: Self, z: Self) -> Self;
+    fn encode(dims: Vector3<Self>) -> Self;
     /// Decode the morton code into the three individual dimensions (x, y, z).
-    fn decode(self) -> (Self, Self, Self);
+    fn decode(self) -> Vector3<Self>;
 
     /// The number of bits used to represent each dimension.
     #[inline]
@@ -216,15 +217,17 @@ impl Morton for u64 {
 
     #[inline]
     #[allow(clippy::unreadable_literal)]
-    fn encode(x: Self, y: Self, z: Self) -> Self {
+    fn encode(dims: Vector3<Self>) -> Self {
+        let [x, y, z]: [Self; 3] = dims.into();
         z.pdep(0x4924924924924924u64)
             | y.pdep(0x2492492492492492u64)
             | x.pdep(0x9249249249249249u64)
     }
 
     #[inline]
-    fn decode(self) -> (Self, Self, Self) {
-        morton::bmi2::decode_3d(self)
+    fn decode(self) -> Vector3<Self> {
+        let (x, y, z) = morton::bmi2::decode_3d(self);
+        Vector3::new(x, y, z)
     }
 }
 
@@ -233,12 +236,12 @@ impl Morton for u128 {
 
     #[inline]
     #[allow(clippy::cast_lossless)]
-    fn decode(self) -> (Self, Self, Self) {
+    fn decode(self) -> Vector3<Self> {
         let low = self as u64;
         let high = (self >> 63) as u64;
         let (lowx, lowy, lowz) = morton::decode_3d(low);
         let (highx, highy, highz) = morton::decode_3d(high);
-        (
+        Vector3::new(
             (highx << 21 | lowx) as u128,
             (highy << 21 | lowy) as u128,
             (highz << 21 | lowz) as u128,
@@ -247,7 +250,8 @@ impl Morton for u128 {
 
     #[inline]
     #[allow(clippy::cast_lossless)]
-    fn encode(x: Self, y: Self, z: Self) -> u128 {
+    fn encode(dims: Vector3<Self>) -> u128 {
+        let [x, y, z]: [Self; 3] = dims.into();
         let highx = (x >> 21) & ((1 << 21) - 1);
         let lowx = x & ((1 << 21) - 1);
         let highy = (y >> 21) & ((1 << 21) - 1);

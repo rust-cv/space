@@ -18,7 +18,7 @@ where
     type Sum = (usize, usize);
 
     fn gather(&self, m: M, _: &i32) -> Self::Sum {
-        if m.decode().0 > (M::one() << (M::dim_bits() - 1)) {
+        if m.decode().x > (M::one() << (M::dim_bits() - 1)) {
             (1, 0)
         } else {
             (0, 1)

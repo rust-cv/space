@@ -188,14 +188,12 @@ where
     fn into(self) -> Vector3<S> {
         let v = self.morton;
         let cut = M::dim_bits() - self.level;
-        let (x, y, z) = (v >> (3 * cut)).decode();
+        let point = (v >> (3 * cut)).decode();
         let scale = (S::one() + S::one()).powi(-(self.level as i32));
 
-        Vector3::new(
-            (S::from_u64(x.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale,
-            (S::from_u64(y.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale,
-            (S::from_u64(z.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale,
-        )
+        point.map(|d| {
+            (S::from_u64(d.to_u64().unwrap()).unwrap() + S::from_f32(0.5).unwrap()) * scale
+        })
     }
 }
 
