@@ -221,13 +221,13 @@ impl Morton for u64 {
         let [x, y, z]: [Self; 3] = dims.into();
         z.pdep(0x4924924924924924u64)
             | y.pdep(0x2492492492492492u64)
-            | x.pdep(0x9249249249249249u64)
+            | x.pdep(0x1249249249249249u64)
     }
 
     #[inline]
     fn decode(self) -> Vector3<Self> {
         let (x, y, z) = morton::bmi2::decode_3d(self);
-        Vector3::new(x, y, z)
+        Vector3::new(x & Self::used_bits(), y, z)
     }
 }
 
