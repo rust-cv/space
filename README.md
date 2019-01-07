@@ -40,6 +40,10 @@ A library that attempts to create good abstractions and implementations for comm
 - Specific file format loading
 - Physics (though it should provide enough abstractions to implement physics outside the library)
 
+## When will `space` be `1.0`
+
+`space` will have a stable API once [const generics](https://github.com/rust-lang/rust/issues/44580) land in Rust stable and each one of the trees supports concrete constant and dynamic dimensional data. `nalgebra` currently supports this kind of functionality via [type-level integers](https://docs.rs/nalgebra/0.16.13/nalgebra/base/dimension/trait.DimName.html). Since const generics are not far off being stabilized, `space` will simply wait for them to merge before being stabilized. In the meantime, the primary focus is on 3d trees specifically, but this is not the final destination of the API.
+
 ## Contributing
 
 - I would love contributions to get this library to where it needs to be to support the point cloud, game,
