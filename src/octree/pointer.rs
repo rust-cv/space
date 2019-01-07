@@ -28,6 +28,12 @@ pub struct PointerOctree<T, M> {
 }
 
 impl<T, M> Default for PointerOctree<T, M> {
+    /// Create an empty octree.
+    /// ```
+    /// use space::PointerOctree;
+    /// let mut tree = PointerOctree::<String, u64>::default();
+    ///
+    /// ```
     fn default() -> Self {
         PointerOctree {
             tree: Internal::default(),
@@ -40,12 +46,27 @@ impl<T, M> PointerOctree<T, M>
 where
     M: Morton,
 {
-    /// Creates a new empty octree.
+    /// Create an empty octree. Calls Default impl.
+    ///
+    /// ```
+    /// use space::PointerOctree;
+    /// let mut tree = PointerOctree::<String, u64>::new();
+    ///
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Fetches an immutable reference to the value of a specific coordinate in the octree
+    /// ```
+    /// use space::{PointerOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = PointerOctree::<String, u64>::new();
+    ///
+    /// let fetched_value = tree.get(Morton::encode(Vector3::<u64>::new(1, 2, 3)));
+    /// assert!(fetched_value.is_none());
+    /// ```
     pub fn get(&self, morton: M) -> Option<&T> {
         // Traverse the tree down to the node we need to operate on.
         let (tree_part, _) = (0..M::dim_bits())
@@ -85,6 +106,16 @@ where
     }
 
     /// Fetches a mututable reference to the value of a specific coordinate in the octree
+    ///
+    /// ```
+    /// use space::{PointerOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = PointerOctree::<String, u64>::new();
+    ///
+    /// let fetched_value = tree.get(Morton::encode(Vector3::<u64>::new(1, 2, 3)));
+    /// assert!(fetched_value.is_none());
+    /// ```
     pub fn get_mut(&mut self, morton: M) -> Option<&T> {
         // Traverse the tree down to the node we need to operate on.
         let (tree_part, _) = (0..M::dim_bits())
@@ -124,6 +155,15 @@ where
     }
 
     /// Insert an item with a point and replace the existing item if they would both occupy the same space.
+    ///
+    /// ```
+    /// use space::{PointerOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = PointerOctree::<String, u64>::new();
+    /// tree.insert(Morton::encode(Vector3::new(1, 2, 3)), "test1".to_string() );
+    ///
+    /// ```
     pub fn insert(&mut self, morton: M, item: T) {
         // Traverse the tree down to the node we need to operate on.
         let (tree_part, level) = (0..M::dim_bits())
