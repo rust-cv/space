@@ -28,9 +28,8 @@ A library that attempts to create good abstractions and implementations for comm
 
 ## What it should have
 
-- Quering what is in a region (for colision detection)
-  - This can be implemented in an abstract way currently using the `explore` parameter to gather operations, but it
-      convenience wrappers need to be created to search over regions (possibly using combinator functions).
+- Querying what is in a region (for colision detection)
+  - This can be implemented in an abstract way using the `explore` parameter to gather operations, but convenience wrappers need to be created to search over regions (possibly using combinator functions).
 - k-d trees
 - R trees
 - R* trees
