@@ -1,56 +1,62 @@
 use itertools::izip;
 use nalgebra::Vector3;
-use rand::distributions::Open01;
+use rand::distributions::{Distribution, Standard};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+use std::iter::repeat_with;
+use std::ops::{Add, AddAssign};
 
 use space::*;
 
-type Vect = Vector3<f64>;
+const POINTS: usize = 10000;
+const CACHE_SIZE: usize = 10000;
 
 struct Center;
 
 impl<M> Folder<(), M> for Center
 where
-    M: Morton,
+    M: Morton + Add + AddAssign,
 {
-    type Sum = Vect;
+    type Sum = (u32, Vector3<M>);
 
     fn gather(&self, m: M, _: &()) -> Self::Sum {
-        MortonWrapper(m).into()
+        (1, m.decode())
     }
 
     fn fold<I>(&self, it: I) -> Self::Sum
     where
         I: Iterator<Item = Self::Sum>,
     {
-        let mut count = 0u8;
-        it.inspect(|_| count += 1).sum::<Vect>() / f64::from(count)
+        it.fold((0, Vector3::zeros()), |total, part| {
+            (total.0 + part.0, total.1 + part.1)
+        })
     }
 }
 
-fn octree_insertion<I: IntoIterator<Item = Vect>>(vecs: I) -> PointerOctree<(), u64> {
-    let mut octree = PointerOctree::<_, u64>::new();
-    let space = LeveledRegion(0);
-    octree.extend(vecs.into_iter().map(|v| (space.discretize(v).unwrap(), ())));
+fn octree_insertion<M: Morton, I: Iterator<Item = M>>(points: I) -> PointerOctree<(), M> {
+    let mut octree = PointerOctree::new();
+    octree.extend(points.map(|i| (i, ())));
     octree
 }
 
-fn random_points(num: usize) -> Vec<Vect> {
-    let mut xrng = SmallRng::from_seed([1; 16]);
-    let mut yrng = SmallRng::from_seed([4; 16]);
-    let mut zrng = SmallRng::from_seed([0; 16]);
+fn random_points<M: Morton>(num: usize) -> impl Iterator<Item = M>
+where
+    Standard: Distribution<M>,
+{
+    let mut rng = SmallRng::from_seed([1; 16]);
 
-    izip!(
-        xrng.sample_iter(&Open01),
-        yrng.sample_iter(&Open01),
-        zrng.sample_iter(&Open01)
-    )
-    .take(num)
-    .map(|(x, y, z)| Vector3::new(x, y, z))
-    .collect()
+    repeat_with(move || rng.gen())
+        .map(|m| m & M::used_bits())
+        .take(num)
 }
 
 fn main() {
-    let octree = octree_insertion(random_points(10000));
+    let mut octree = octree_insertion::<u64, _>(random_points(POINTS));
+    let mut rng = SmallRng::from_seed([1; 16]);
+    loop {
+        let mut new_octree = PointerOctree::new();
+        new_octree.extend(octree.iter().map(|(m, _)| (m, ())));
+
+        std::mem::replace(&mut octree, new_octree);
+    }
 }
