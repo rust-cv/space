@@ -45,6 +45,84 @@ where
         Self::default()
     }
 
+    /// Fetches an immutable reference to the value of a specific coordinate in the octree
+    pub fn get(&self, morton: M) -> Option<&T> {
+        // Traverse the tree down to the node we need to operate on.
+        let (tree_part, _) = (0..M::dim_bits())
+            .fold_while((&self.tree, 0), |(node, old_ix), i| {
+                use itertools::FoldWhile::{Continue, Done};
+                match node {
+                    Internal::Node(box Oct { ref children }) => {
+                        // The index into the array to access the next octree node
+                        let subindex = morton.get_level(i);
+                        Continue((&children[subindex], i))
+                    }
+                    Internal::Leaf(_, _) => Done((node, old_ix)),
+                    Internal::None => Done((node, old_ix)),
+                }
+            })
+            .into_inner();
+
+        match tree_part {
+            Internal::Leaf(ref leaf_item, dest_morton) => {
+                // If they have the same code then replace it.
+                if morton == *dest_morton {
+                    return Some(leaf_item)
+                } else {
+                    return None;
+                }
+                // Otherwise we must split them, which we must do outside of this scope due to the borrow.
+            }
+            Internal::None => {
+                return None;
+            }
+            _ => {
+                unreachable!(
+                    "space::Octree::insert(): can only get None or Leaf in this code area"
+                );
+            }
+        }
+    }
+
+    /// Fetches a mututable reference to the value of a specific coordinate in the octree
+    pub fn get_mut(&mut self, morton: M) -> Option<&T> {
+        // Traverse the tree down to the node we need to operate on.
+        let (tree_part, _) = (0..M::dim_bits())
+            .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
+                use itertools::FoldWhile::{Continue, Done};
+                match node {
+                    Internal::Node(box Oct { ref mut children }) => {
+                        // The index into the array to access the next octree node
+                        let subindex = morton.get_level(i);
+                        Continue((&mut children[subindex], i))
+                    }
+                    Internal::Leaf(_, _) => Done((node, old_ix)),
+                    Internal::None => Done((node, old_ix)),
+                }
+            })
+            .into_inner();
+
+        match tree_part {
+            Internal::Leaf(ref mut leaf_item, dest_morton) => {
+                // If they have the same code then replace it.
+                if morton == *dest_morton {
+                    return Some(leaf_item)
+                } else {
+                    return None;
+                }
+                // Otherwise we must split them, which we must do outside of this scope due to the borrow.
+            }
+            Internal::None => {
+                return None;
+            }
+            _ => {
+                unreachable!(
+                    "space::Octree::insert(): can only get None or Leaf in this code area"
+                );
+            }
+        }
+    }
+
     /// Insert an item with a point and replace the existing item if they would both occupy the same space.
     pub fn insert(&mut self, morton: M, item: T) {
         // Traverse the tree down to the node we need to operate on.

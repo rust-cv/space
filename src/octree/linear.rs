@@ -4,22 +4,21 @@ use crate::*;
 ///
 /// ```
 /// use space::*;
+/// use nalgebra::Vector3;
 ///
 /// let mut tree = LinearOctree::<String, u64>::new();
-///
-/// let region = space::LeveledRegion(0);
-/// let morton = region.discretize::<f32, u64>(nalgebra::Vector3::new(0.5, 0.5, 0.5)).unwrap();
+/// let coord = Vector3::<u64>::new(1, 2, 3);
 ///
 /// // Insert a value into the tree
-/// tree.insert(morton, "test1".to_string() );
+/// tree.insert(Morton::encode(coord), "test1".to_string() );
 ///
 /// // Fetch a value at a specific coordinate
-/// let fetched_value = tree.get(morton);
+/// let fetched_value = tree.get(Morton::encode(coord));
 /// assert_eq!("test1", *fetched_value.unwrap());
 ///
 /// // Fetch a value that doesnt exist
-/// let morton_empty = region.discretize::<f32, u64>(nalgebra::Vector3::new(0.1, 0.1, 0.1)).unwrap();
-/// let fetched_value = tree.get(morton_empty);
+/// let coord_empty = Vector3::<u64>::new(4, 5, 6);
+/// let fetched_value = tree.get(Morton::encode(coord_empty));
 /// assert!(fetched_value.is_none());
 ///
 /// ```
@@ -119,9 +118,14 @@ where
         }
     }
 
-    /// Fetches a value at a specific coordinate in the octree
-    pub fn get(&mut self, morton: M) -> Option<&T> {
+    /// Fetches an immutable reference to the value of a specific coordinate in the octree
+    pub fn get(&self, morton: M) -> Option<&T> {
         self.leaves.get(&MortonWrapper(morton))
+    }
+
+    /// Fetches a mutable reference to the value of a specific coordinate in the octree
+    pub fn get_mut(&mut self, morton: M) -> Option<&mut T> {
+        self.leaves.get_mut(&MortonWrapper(morton))
     }
 
     /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.
