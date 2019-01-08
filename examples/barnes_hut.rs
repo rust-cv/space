@@ -104,6 +104,9 @@ fn main() {
                     acc + delta * f64::from(n) / r3
                 });
 
+                // Scale the acceleration by `G`.
+                let acceleration = G * acceleration;
+
                 // Take the midway between the old and new velocity and apply that to the position.
                 let new_position = (v + acceleration * 0.5 + old_vel)
                     .map(|n| (n as i64 & u64::used_bits() as i64) as u64);
