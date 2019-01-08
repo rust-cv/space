@@ -67,13 +67,16 @@ struct Vertex {
 implement_vertex!(Vertex, position);
 
 fn wrap_delta(pos: f64) -> f64 {
+    // Bound must be positive
+    let bound = (1u64 << (u64::dim_bits() - 1)) as f64;
+    let twobound = 2.0 * bound;
     // Create shrunk_pos, which may still not be inside the space, but is within one stride of it
-    let shrunk_pos = pos % 1.0;
+    let shrunk_pos = pos % twobound;
 
-    if shrunk_pos < -0.5 {
-        shrunk_pos + 1.0
-    } else if shrunk_pos > 0.5 {
-        shrunk_pos - 1.0
+    if shrunk_pos < -bound {
+        shrunk_pos + twobound
+    } else if shrunk_pos > bound {
+        shrunk_pos - twobound
     } else {
         shrunk_pos
     }
