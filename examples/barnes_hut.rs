@@ -10,10 +10,10 @@ use space::*;
 
 const POINTS: usize = 1000;
 const CACHE_SIZE: usize = 20000;
-const THETA2: f64 = 0.1;
+const THETA2: f64 = 0.02;
 const EPS2: f64 = 100_000_000.0;
-const G: f64 = 1.0e12;
-const DRAG: f64 = 1.0e-1;
+const G: f64 = 5.0e11;
+const DRAG: f64 = 2.0e-1;
 
 struct Center;
 
@@ -120,8 +120,9 @@ fn main() {
             ),
             |(mut new_octree, cache, mut verts), (m, old_vel)| {
                 let position: Vector3<f64> = MortonWrapper(m).into();
+                let position = position.map(|n| n + 0.5);
                 let mut it = octree.iter_fold_random(
-                    1,
+                    21,
                     move |region| {
                         // s/d is used in barnes hut simulations to control simulation accuracy.
                         // Here we are using it to control granularity based on screen space.
@@ -137,7 +138,7 @@ fn main() {
                 );
 
                 // Decode the morton into its int vector.
-                let v = m.decode().map(|n| n as f64);
+                let v = m.decode().map(|n| n as f64 + 0.5);
 
                 // Compute the net inverse force without any scaling.
                 let acceleration = (&mut it).fold(Vector3::zeros(), |acc, (_, (n, pos))| {
@@ -201,5 +202,7 @@ fn main() {
                 std::process::exit(0)
             }
         });
+
+        println!("{} particles left", octree.len());
     }
 }
