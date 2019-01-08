@@ -1,4 +1,3 @@
-use itertools::izip;
 use nalgebra::Vector3;
 use rand::distributions::{Distribution, Standard};
 use rand::rngs::SmallRng;
@@ -109,7 +108,7 @@ fn main() {
 
                 // Take the midway between the old and new velocity and apply that to the position.
                 let new_position = (v + acceleration * 0.5 + old_vel)
-                    .map(|n| (n as i64 & u64::used_bits() as i64) as u64);
+                    .map(|n| (n as i64 & ((1i64 << u64::dim_bits()) - 1) as i64) as u64);
                 new_octree.insert(u64::encode(new_position), old_vel + acceleration);
                 (new_octree, it.into())
             },
