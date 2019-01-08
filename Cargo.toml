@@ -24,6 +24,7 @@ log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"
 
 [dev-dependencies]
 criterion = "0.2"
+glium = "0.23.0"
 
 [[bench]]
 name = "octree"
