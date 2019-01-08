@@ -76,6 +76,7 @@ where
             Internal::None => {
                 // Simply add a new leaf.
                 *tree_part = Internal::Leaf(item, morton);
+                self.count += 1;
                 return;
             }
             _ => {
