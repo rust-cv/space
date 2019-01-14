@@ -308,24 +308,14 @@ where
     }
 
     /// Iterates over the octree and, for every internal node in the tree, runs `explore` to check if it should
-    /// continue down to the leaves or stop at this node. If it stops at an internal node, it passes one leaf
-    /// that descends from that internal node to `folder.gather()` and then calls `folder.fold()` on every child
-    /// internal node until it has propogated all the information up to the node we stopped on. If it reaches a
-    /// leaf node, it passes an iterator over just that one leaf to `folder.gather()`. This allows an operation
-    /// to be called on every region in the tree using `explore` to limit the traversal from iterating over the
-    /// whole tree.
-    ///
-    /// Note that whenever a region changes it should invalidate all parent nodes and all child nodes in the cache.
-    /// See `morton_levels` for how to generate the levels of a morton.
-    ///
-    /// If you want to ensure your cache can hold all results, it needs to have `len * 8 / 7` capacity.
+    /// continue down to the leaves or stop at this node. If it stops at an internal node, it gets the first leaf
+    /// node in z-order from that node and includes it in the iterator.
     pub fn iter_explore_simple<'a, E>(
         &'a self,
         explore: E,
     ) -> SimpleExploreIter<'a, T, M, impl FnMut(MortonRegion<M>) -> bool + 'a>
     where
         E: FnMut(MortonRegion<M>) -> bool + 'a,
-        T: Clone,
     {
         // This uses `dim_bits` to avoid ever needing to use the rng (we cant go lower than that).
         self.tree.iter_explore_simple(MortonRegion::base(), explore)
@@ -470,7 +460,6 @@ where
     ) -> SimpleExploreIter<'a, T, M, impl FnMut(MortonRegion<M>) -> bool + 'a>
     where
         E: FnMut(MortonRegion<M>) -> bool + 'a,
-        T: Clone,
     {
         SimpleExploreIter::new(self, region, explore)
     }
@@ -823,7 +812,6 @@ impl<'a, T, M, E> Iterator for SimpleExploreIter<'a, T, M, E>
 where
     M: Morton,
     E: FnMut(MortonRegion<M>) -> bool,
-    T: Clone,
 {
     type Item = (MortonRegion<M>, M, &'a T);
 
