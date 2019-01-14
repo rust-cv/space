@@ -307,6 +307,30 @@ where
             .iter_fold_random(MortonRegion::base(), depth, explore, folder, rng, cache)
     }
 
+    /// Iterates over the octree and, for every internal node in the tree, runs `explore` to check if it should
+    /// continue down to the leaves or stop at this node. If it stops at an internal node, it passes one leaf
+    /// that descends from that internal node to `folder.gather()` and then calls `folder.fold()` on every child
+    /// internal node until it has propogated all the information up to the node we stopped on. If it reaches a
+    /// leaf node, it passes an iterator over just that one leaf to `folder.gather()`. This allows an operation
+    /// to be called on every region in the tree using `explore` to limit the traversal from iterating over the
+    /// whole tree.
+    ///
+    /// Note that whenever a region changes it should invalidate all parent nodes and all child nodes in the cache.
+    /// See `morton_levels` for how to generate the levels of a morton.
+    ///
+    /// If you want to ensure your cache can hold all results, it needs to have `len * 8 / 7` capacity.
+    pub fn iter_explore_simple<'a, E>(
+        &'a self,
+        explore: E,
+    ) -> SimpleExploreIter<'a, T, M, impl FnMut(MortonRegion<M>) -> bool + 'a>
+    where
+        E: FnMut(MortonRegion<M>) -> bool + 'a,
+        T: Clone,
+    {
+        // This uses `dim_bits` to avoid ever needing to use the rng (we cant go lower than that).
+        self.tree.iter_explore_simple(MortonRegion::base(), explore)
+    }
+
     /// This gathers the tree into a linear hashed octree map. This map contains every internal and leaf node
     /// as the sum type that the `folder` produces.
     pub fn collect_fold<E, F>(&self, folder: &F) -> E
@@ -437,6 +461,18 @@ where
         Standard: Distribution<M>,
     {
         FoldIter::new(self, region, explore, folder, depth, rng, cache)
+    }
+
+    pub fn iter_explore_simple<'a, E>(
+        &'a self,
+        region: MortonRegion<M>,
+        explore: E,
+    ) -> SimpleExploreIter<'a, T, M, impl FnMut(MortonRegion<M>) -> bool + 'a>
+    where
+        E: FnMut(MortonRegion<M>) -> bool + 'a,
+        T: Clone,
+    {
+        SimpleExploreIter::new(self, region, explore)
     }
 
     fn collect_fold<E, F>(&self, region: MortonRegion<M>, folder: &F, map: &mut E) -> Option<F::Sum>
@@ -760,6 +796,68 @@ where
 {
     fn into(self) -> MortonRegionCache<F::Sum, M> {
         self.cache
+    }
+}
+
+pub struct SimpleExploreIter<'a, T, M, E>
+where
+    M: Morton,
+{
+    nodes: FoldStack<'a, T, M>,
+    explore: E,
+}
+
+impl<'a, T, M, E> SimpleExploreIter<'a, T, M, E>
+where
+    M: Morton,
+{
+    fn new(node: &'a Internal<T, M>, region: MortonRegion<M>, explore: E) -> Self {
+        SimpleExploreIter {
+            nodes: vec![(node, region)],
+            explore,
+        }
+    }
+}
+
+impl<'a, T, M, E> Iterator for SimpleExploreIter<'a, T, M, E>
+where
+    M: Morton,
+    E: FnMut(MortonRegion<M>) -> bool,
+    T: Clone,
+{
+    type Item = (MortonRegion<M>, M, &'a T);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((node, region)) = self.nodes.pop() {
+            // If we shouldn't go further into the region, then take the first thing from the iterator.
+            if !(self.explore)(region) {
+                trace!("chose not to go further");
+                return Some(
+                    node.iter()
+                        .next()
+                        .map(|(m, t)| (region, m, t))
+                        .expect("SimpleExploreIter::next(): internal node had no leaves"),
+                );
+            } else {
+                match node {
+                    Internal::Node(box Oct { ref children }) => {
+                        trace!("traversing deeper due to node at level {}", region.level);
+                        // Traverse deeper (we already checked if we didn't need to go further).
+                        for (ix, child) in children.iter().enumerate() {
+                            self.nodes.push((child, region.enter(ix)));
+                        }
+                    }
+                    Internal::Leaf(ref item, morton) => {
+                        trace!("stopping due to leaf at level {}", region.level);
+
+                        return Some((region, *morton, item));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
     }
 }
 
