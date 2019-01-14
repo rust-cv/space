@@ -818,31 +818,31 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((node, region)) = self.nodes.pop() {
-            // If we shouldn't go further into the region, then take the first thing from the iterator.
-            if !(self.explore)(region) {
-                trace!("chose not to go further");
-                return Some(
-                    node.iter()
-                        .next()
-                        .map(|(m, t)| (region, m, t))
-                        .expect("SimpleExploreIter::next(): internal node had no leaves"),
-                );
-            } else {
-                match node {
-                    Internal::Node(box Oct { ref children }) => {
+            match node {
+                Internal::Node(box Oct { ref children }) => {
+                    // If we shouldn't go further into the region, then take the first thing from the iterator.
+                    if !(self.explore)(region) {
+                        trace!("chose not to go further");
+                        return Some(
+                            node.iter()
+                                .next()
+                                .map(|(m, t)| (region, m, t))
+                                .expect("SimpleExploreIter::next(): internal node had no leaves"),
+                        );
+                    } else {
                         trace!("traversing deeper due to node at level {}", region.level);
                         // Traverse deeper (we already checked if we didn't need to go further).
                         for (ix, child) in children.iter().enumerate() {
                             self.nodes.push((child, region.enter(ix)));
                         }
                     }
-                    Internal::Leaf(ref item, morton) => {
-                        trace!("stopping due to leaf at level {}", region.level);
-
-                        return Some((region, *morton, item));
-                    }
-                    _ => {}
                 }
+                Internal::Leaf(ref item, morton) => {
+                    trace!("stopping due to leaf at level {}", region.level);
+
+                    return Some((region, *morton, item));
+                }
+                _ => {}
             }
         }
         None
