@@ -1,6 +1,27 @@
 use crate::*;
 
 /// A linear hashed octree. This has constant time lookup for a given region or morton code.
+///
+/// ```
+/// use space::{LinearOctree, Morton};
+/// use nalgebra::Vector3;
+///
+/// let mut tree = LinearOctree::<String, u64>::new();
+/// let coord = Vector3::<u64>::new(1, 2, 3);
+///
+/// // Insert a value into the tree
+/// tree.insert(Morton::encode(coord), "test1".to_string() );
+///
+/// // Fetch a value at a specific coordinate
+/// let fetched_value = tree.get(Morton::encode(coord));
+/// assert_eq!("test1", *fetched_value.unwrap());
+///
+/// // Fetch a value that doesnt exist
+/// let coord_empty = Vector3::<u64>::new(4, 5, 6);
+/// let fetched_value = tree.get(Morton::encode(coord_empty));
+/// assert!(fetched_value.is_none());
+///
+/// ```
 #[derive(Clone)]
 pub struct LinearOctree<T, M> {
     /// The leaves of the octree.
@@ -14,6 +35,13 @@ impl<T, M> Default for LinearOctree<T, M>
 where
     M: Morton,
 {
+    /// Create a default, empty linear Octree
+    ///
+    /// ```
+    /// use space::LinearOctree;
+    /// let mut tree = LinearOctree::<String, u64>::new();
+    ///
+    /// ```
     fn default() -> Self {
         let mut internals = MortonRegionMap::default();
         internals.insert(MortonRegion::default(), M::null());
@@ -28,7 +56,13 @@ impl<T, M> LinearOctree<T, M>
 where
     M: Morton,
 {
-    /// Create an empty linear octree.
+    /// Create an empty octree. Calls Default impl.
+    ///
+    /// ```
+    /// use space::LinearOctree;
+    /// let mut tree = LinearOctree::<String, u64>::new();
+    ///
+    /// ```
     pub fn new() -> Self {
         Default::default()
     }
@@ -36,6 +70,15 @@ where
     /// Inserts the item into the octree.
     ///
     /// If another element occupied the exact same morton, it will be evicted and replaced.
+    ///
+    /// ```
+    /// use space::{LinearOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = LinearOctree::<String, u64>::new();
+    /// tree.insert(Morton::encode(Vector3::new(1, 2, 3)), "test1".to_string() );
+    ///
+    /// ```
     pub fn insert(&mut self, morton: M, item: T) {
         use std::collections::hash_map::Entry::*;
         // First we must insert the node into the leaves.
@@ -95,6 +138,26 @@ where
                 }
             }
         }
+    }
+
+    /// Fetches an immutable reference to the value of a specific coordinate in the octree
+    ///
+    /// ```
+    /// use space::{LinearOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = LinearOctree::<String, u64>::new();
+    ///
+    /// let fetched_value = tree.get(Morton::encode(Vector3::<u64>::new(1, 2, 3)));
+    /// assert!(fetched_value.is_none());
+    /// ```
+    pub fn get(&self, morton: M) -> Option<&T> {
+        self.leaves.get(&MortonWrapper(morton))
+    }
+
+    /// Fetches a mutable reference to the value of a specific coordinate in the octree
+    pub fn get_mut(&mut self, morton: M) -> Option<&mut T> {
+        self.leaves.get_mut(&MortonWrapper(morton))
     }
 
     /// This gathers the octree in a tree fold by gathering leaves with `gatherer` and folding with `folder`.

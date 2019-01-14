@@ -215,6 +215,15 @@ pub trait Morton: PrimInt + FromPrimitive + ToPrimitive + Hash + std::fmt::Debug
 impl Morton for u64 {
     const BITS: usize = 64;
 
+    /// Encode a Vector3<u64> into a morton code.
+    ///
+    /// ```
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    ///
+    /// let morton_code = Morton::encode(Vector3::<u64>::new(1, 2, 3));
+    /// assert_eq!(morton_code, 53);
+    /// ```
     #[inline]
     #[allow(clippy::unreadable_literal)]
     fn encode(dims: Vector3<Self>) -> Self {
@@ -224,6 +233,15 @@ impl Morton for u64 {
             | x.pdep(0x1249249249249249u64)
     }
 
+    /// Decode a u64 morton to its associated Vector3<u64>
+    ///
+    /// ```
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    ///
+    /// let coordinates = Morton::decode(53);
+    /// assert_eq!(coordinates, Vector3::<u64>::new(1, 2, 3));
+    /// ```
     #[inline]
     fn decode(self) -> Vector3<Self> {
         let (x, y, z) = morton::bmi2::decode_3d(self);
@@ -234,20 +252,15 @@ impl Morton for u64 {
 impl Morton for u128 {
     const BITS: usize = 128;
 
-    #[inline]
-    #[allow(clippy::cast_lossless)]
-    fn decode(self) -> Vector3<Self> {
-        let low = self as u64;
-        let high = (self >> 63) as u64;
-        let (lowx, lowy, lowz) = morton::decode_3d(low);
-        let (highx, highy, highz) = morton::decode_3d(high);
-        Vector3::new(
-            (highx << 21 | lowx) as u128,
-            (highy << 21 | lowy) as u128,
-            (highz << 21 | lowz) as u128,
-        )
-    }
-
+    /// Encode a Vector3<u128> into a morton code.
+    ///
+    /// ```
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    ///
+    /// let morton_code = Morton::encode(Vector3::<u128>::new(1, 2, 3));
+    /// assert_eq!(morton_code, 53);
+    /// ```
     #[inline]
     #[allow(clippy::cast_lossless)]
     fn encode(dims: Vector3<Self>) -> u128 {
@@ -261,6 +274,29 @@ impl Morton for u128 {
         let high = morton::encode_3d(highx as u64, highy as u64, highz as u64);
         let low = morton::encode_3d(lowx as u64, lowy as u64, lowz as u64);
         (high as u128) << 63 | low as u128
+    }
+
+    /// Decode a u128 morton to its associated Vector3<u128>
+    ///
+    /// ```
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    ///
+    /// let coordinates = Morton::decode(53);
+    /// assert_eq!(coordinates, Vector3::<u128>::new(1, 2, 3));
+    /// ```
+    #[inline]
+    #[allow(clippy::cast_lossless)]
+    fn decode(self) -> Vector3<Self> {
+        let low = self as u64;
+        let high = (self >> 63) as u64;
+        let (lowx, lowy, lowz) = morton::decode_3d(low);
+        let (highx, highy, highz) = morton::decode_3d(high);
+        Vector3::new(
+            (highx << 21 | lowx) as u128,
+            (highy << 21 | lowy) as u128,
+            (highz << 21 | lowz) as u128,
+        )
     }
 }
 
@@ -289,23 +325,60 @@ impl Hasher for MortonHash {
         self.value
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// let val = [0; 1];
+    /// hash.write(&val);
+    ///```
     #[inline]
     fn write(&mut self, _: &[u8]) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_u8(1);
+    ///```
     fn write_u8(&mut self, _: u8) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_u16(1);
+    ///```
     fn write_u16(&mut self, _: u16) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_u32(1);
+    ///```
     fn write_u32(&mut self, _: u32) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_u64(123);
+    /// assert_eq!(hash.finish(), 12638158613253308507);
+    ///```
     #[inline(always)]
     #[allow(clippy::unreadable_literal)]
     fn write_u64(&mut self, i: u64) {
@@ -316,6 +389,14 @@ impl Hasher for MortonHash {
             ((top ^ 14695981039346656037).wrapping_mul(1099511628211) & !bottom_mask) + bottom;
     }
 
+    ///```
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_u128(123);
+    /// assert_eq!(hash.finish(), 12638158613253308507);
+    ///```
     #[inline(always)]
     #[allow(clippy::unreadable_literal)]
     fn write_u128(&mut self, i: u128) {
@@ -326,31 +407,90 @@ impl Hasher for MortonHash {
             + bottom) as u64;
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_usize(123);
+    ///```
     fn write_usize(&mut self, _: usize) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_i8(123);
+    ///```
     fn write_i8(&mut self, _: i8) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_i16(123);
+    ///```
     fn write_i16(&mut self, _: i16) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_i32(123);
+    ///```
     fn write_i32(&mut self, _: i32) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_i64(123);
+    ///```
     fn write_i64(&mut self, _: i64) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_i128(123);
+    ///```
     fn write_i128(&mut self, _: i128) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
 
+    ///```#[should_panic]
+    /// use std::hash::Hasher;
+    /// use space::MortonHash;
+    ///
+    /// let mut hash = MortonHash::default();
+    /// hash.write_isize(123);
+    ///```
     fn write_isize(&mut self, _: isize) {
         panic!("Morton hash should only be used with a single 64 bit value");
     }
+}
+
+#[test]
+fn test_write() {
+    use crate::MortonHash;
+    use std::hash::Hasher;
+
+    let mut hash = MortonHash::default();
+    hash.write_u64(123);
+    println!("hash={}", hash.finish());
 }
