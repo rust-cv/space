@@ -3,12 +3,10 @@
 mod region;
 mod wrapper;
 
-pub use self::morton::*;
 pub use self::region::*;
 pub use self::wrapper::*;
 
-use bitintr::Pdep;
-use bitwise::morton;
+use bitintr::{Pdep, Pext};
 use nalgebra::Vector3;
 use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 use std::hash::{Hash, Hasher};
@@ -225,12 +223,10 @@ impl Morton for u64 {
     /// assert_eq!(morton_code, 53);
     /// ```
     #[inline]
-    #[allow(clippy::unreadable_literal)]
     fn encode(dims: Vector3<Self>) -> Self {
         let [x, y, z]: [Self; 3] = dims.into();
-        z.pdep(0x4924924924924924u64)
-            | y.pdep(0x2492492492492492u64)
-            | x.pdep(0x1249249249249249u64)
+        let bits = 0x1_249_249_249_249_249u64;
+        z.pdep(bits << 2) | y.pdep(bits << 1) | x.pdep(bits)
     }
 
     /// Decode a u64 morton to its associated Vector3<u64>
@@ -244,7 +240,8 @@ impl Morton for u64 {
     /// ```
     #[inline]
     fn decode(self) -> Vector3<Self> {
-        let (x, y, z) = morton::bmi2::decode_3d(self);
+        let bits = 0x1_249_249_249_249_249u64;
+        let (x, y, z) = (self.pext(bits), self.pext(bits << 1), self.pext(bits << 2));
         Vector3::new(x & Self::used_bits(), y, z)
     }
 }
@@ -271,8 +268,8 @@ impl Morton for u128 {
         let lowy = y & ((1 << 21) - 1);
         let highz = (z >> 21) & ((1 << 21) - 1);
         let lowz = z & ((1 << 21) - 1);
-        let high = morton::encode_3d(highx as u64, highy as u64, highz as u64);
-        let low = morton::encode_3d(lowx as u64, lowy as u64, lowz as u64);
+        let high = u64::encode([highx as u64, highy as u64, highz as u64].into());
+        let low = u64::encode([lowx as u64, lowy as u64, lowz as u64].into());
         (high as u128) << 63 | low as u128
     }
 
@@ -290,8 +287,8 @@ impl Morton for u128 {
     fn decode(self) -> Vector3<Self> {
         let low = self as u64;
         let high = (self >> 63) as u64;
-        let (lowx, lowy, lowz) = morton::decode_3d(low);
-        let (highx, highy, highz) = morton::decode_3d(high);
+        let [lowx, lowy, lowz]: [u64; 3] = low.decode().into();
+        let [highx, highy, highz]: [u64; 3] = high.decode().into();
         Vector3::new(
             (highx << 21 | lowx) as u128,
             (highy << 21 | lowy) as u128,
