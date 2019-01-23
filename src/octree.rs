@@ -8,7 +8,7 @@ pub use self::pointer::PointerOctree;
 
 use crate::morton::*;
 use nalgebra::Vector3;
-use num::{Float, FromPrimitive, ToPrimitive};
+use num_traits::{Float, FromPrimitive, ToPrimitive};
 
 /// Implement this trait to perform a tree fold across the octree.
 ///

@@ -11,19 +11,19 @@ authors = ["Geordon Worley <vadixidav@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-nalgebra = "0.16.3"
-num = "0.2.0"
-itertools = "0.7.8"
-either = "1.5.0"
-bitwise = "0.1.1"
-lru-cache = "0.1.1"
-rand = "0.5.5"
-smallvec = "0.6.7"
-bitintr = "0.2.0"
+nalgebra = { version = "0.16.3", default-features = false }
+num-traits = { version = "0.2.6", default-features = false }
+itertools = { version = "0.7.8", default-features = false }
+either = { version = "1.5.0", default-features = false }
+bitwise = { version = "0.1.1", default-features = false }
+lru-cache = { version = "0.1.1", default-features = false }
+rand = { version = "0.5.5", features = ["std"] }
+smallvec = { version = "0.6.7", default-features = false }
+bitintr = { version = "0.2.0", default-features = false }
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 
 [dev-dependencies]
-criterion = "0.2"
+criterion = { version = "0.2", default-features = false }
 glium = "0.23.0"
 
 [profile.release]

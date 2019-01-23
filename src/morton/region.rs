@@ -1,6 +1,6 @@
 use crate::*;
 use nalgebra::Vector3;
-use num::{Float, FromPrimitive, ToPrimitive};
+use num_traits::{Float, FromPrimitive, ToPrimitive};
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use std::hash::{Hash, Hasher};
 

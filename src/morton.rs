@@ -10,7 +10,7 @@ pub use self::wrapper::*;
 use bitintr::Pdep;
 use bitwise::morton;
 use nalgebra::Vector3;
-use num::{FromPrimitive, PrimInt, ToPrimitive};
+use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 use std::hash::{Hash, Hasher};
 
 /// Use this to map regions defined by a z-order curve on a particular level to arbitrary objects.
