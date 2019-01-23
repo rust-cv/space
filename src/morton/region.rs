@@ -101,6 +101,17 @@ where
             explore,
         }
     }
+
+    /// Checks if a morton is contained in the region.
+    ///
+    /// ```
+    /// let region = space::MortonRegion { morton: 0x7000_0000_0000_0000u64, level: 1 };
+    /// assert!(region.contains(0x7123_1234_1234_1234));
+    /// assert!(!region.contains(0x6123_1234_1234_1234));
+    /// ```
+    pub fn contains(&self, morton: M) -> bool {
+        self.significant_bits() == morton.get_significant_bits(self.level)
+    }
 }
 
 impl<M> PartialEq for MortonRegion<M>
