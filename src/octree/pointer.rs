@@ -97,7 +97,7 @@ where
             Internal::None => None,
             _ => {
                 unreachable!(
-                    "space::Octree::insert(): can only get None or Leaf in this code area"
+                    "space::PointerOctree::get(): can only get None or Leaf in this code area"
                 );
             }
         }
@@ -144,7 +144,7 @@ where
             Internal::None => None,
             _ => {
                 unreachable!(
-                    "space::Octree::insert(): can only get None or Leaf in this code area"
+                    "space::PointerOctree::get_mut(): can only get None or Leaf in this code area"
                 );
             }
         }
@@ -195,7 +195,7 @@ where
             }
             _ => {
                 unreachable!(
-                    "space::Octree::insert(): can only get None or Leaf in this code area"
+                    "space::PointerOctree::insert(): can only get None or Leaf in this code area"
                 );
             }
         }
@@ -229,6 +229,56 @@ where
         }
     }
 
+    /// Fetches a mututable reference to the value of a specific coordinate in the octree
+    ///
+    /// ```
+    /// use space::{PointerOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = PointerOctree::<String, u64>::new();
+    /// let m = Morton::encode(Vector3::<u64>::new(1, 2, 3));
+    ///
+    /// let fetched_value = tree.remove(m);
+    /// assert!(fetched_value.is_none());
+    /// 
+    /// tree.insert(m, "hello".to_owned());
+    /// 
+    /// let fetched_value = tree.remove(m);
+    /// assert!(fetched_value == Some("hello".to_owned()));
+    /// ```
+    pub fn remove(&mut self, morton: M) -> Option<T> {
+        // Traverse the tree down to the node we need to operate on.
+        let (tree_part, _) = (0..M::dim_bits())
+            .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
+                use itertools::FoldWhile::{Continue, Done};
+                match node {
+                    Internal::Node(box Oct { ref mut children }) => {
+                        // The index into the array to access the next octree node
+                        let subindex = morton.get_level(i);
+                        Continue((&mut children[subindex], i))
+                    }
+                    Internal::Leaf(_, _) => Done((node, old_ix)),
+                    Internal::None => Done((node, old_ix)),
+                }
+            })
+            .into_inner();
+        
+        let mut leaf = Internal::None;
+        std::mem::swap(&mut leaf, tree_part);
+
+        match leaf {
+            Internal::Leaf(leaf_item, _) => {
+                Some(leaf_item)
+            }
+            Internal::None => None,
+            _ => {
+                unreachable!(
+                    "space::Octree::PointerOctree(): can only get None or Leaf in this code area"
+                );
+            }
+        }
+    }
+
     /// Iterate over all octree nodes and their morton codes.
     pub fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         self.tree.iter()
@@ -240,7 +290,7 @@ where
     /// a random sampling (over space, not points) at the node at this point. If a `depth` of `1` is used,
     /// it will traverse down by one level and do `8` random samples at that octree level. This will give back
     /// an iterator of no more than `8` spots.
-    fn iter_rand<'a, R: Rng>(
+    pub fn iter_rand<'a, R: Rng>(
         &'a self,
         depth: usize,
         rng: &'a mut R,
