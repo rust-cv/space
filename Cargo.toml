@@ -1,12 +1,13 @@
 [package]
 name = "space"
-version = "0.7.1"
+version = "0.7.2"
 description = "A library for working with spatial trees and point clouds"
 documentation = "https://docs.rs/space/"
 repository = "https://github.com/vadixidav/space"
 keywords = ["space", "pointcloud", "octree", "morton", "spatial"]
 license = "MIT"
 authors = ["Geordon Worley <vadixidav@gmail.com>"]
+readme = "README.md"
 
 edition = "2018"
 
