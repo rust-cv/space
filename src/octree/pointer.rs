@@ -2,6 +2,8 @@ use crate::*;
 
 use itertools::Itertools;
 
+use std::ops::Sub;
+
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -34,9 +36,19 @@ pub struct PointerOctree<T, M> {
 }
 
 /// A pointer octree with the capability of resizing.
-pub struct ResizingPointerOctree<T, M> {
+pub struct ResizingPointerOctree<T, M, S>
+where
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + Ord
+        + PartialOrd
+        + From<f64>
+        + std::fmt::Debug
+        + 'static,
+{
     pub octree: PointerOctree<T, M>,
-    pub region: LeveledRegion,
+    pub region: CenteredLeveledRegion<S>,
 }
 
 impl<T, M> Default for PointerOctree<T, M> {
@@ -465,22 +477,28 @@ where
 
 #[allow(dead_code)]
 /// Associates an octree with a LeveledRegion in order to enable resizing.
-impl<T, M> ResizingPointerOctree<T, M>
+impl<T, M, S> ResizingPointerOctree<T, M, S>
 where
     M: Morton,
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + Ord
+        + PartialOrd
+        + From<f64>
+        + std::fmt::Debug
+        + 'static,
 {
     /// Create an empty resizing octree. Calls Default impl.
-    /// The LeveledRegion parameter is initially set to zero.
-    ///
-    /// ```
-    /// use space::ResizingPointerOctree;
-    /// let mut tree = ResizingPointerOctree::<String, u64>::new();
-    ///
-    /// ```
+    /// ```n``` represents the parameter of the associated ```LeveledRegion```, while
+    /// ```center``` represents the center of the ```LeveledRegion```.
     pub fn new() -> Self {
         Self {
             octree: PointerOctree::default(),
-            region: LeveledRegion(0),
+            region: CenteredLeveledRegion {
+                leveled_region: LeveledRegion(0),
+                center: Vector3::new((0f64).into(), (0f64).into(), (0f64).into()),
+            },
         }
     }
 
@@ -494,80 +512,18 @@ where
     ///
     /// ```
     /// use space::ResizingPointerOctree;
-    /// let mut tree = ResizingPointerOctree::<String, u64>::new();
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     ///
-    /// let resize_loc = tree.resize_loc(Vector3::new(2, 2, 2));
+    /// let expand_loc = tree.expand_loc(Vector3::new(2f64, 2f64, 2f64));
     /// // This is outside all the bounds of the current octree, so the
     /// // point itself dictates the direction of expansion (i.e. 0b00000111)
     /// // Since the new point will be in octant 0b111, the returned octant will be 0b000.
     ///
-    /// assert!(resize_loc == 0);
+    /// assert!(expand_loc == 0);
     ///
-    pub fn resize_loc<S>(&self, point: Vector3<S>) -> Option<u8>
-    where
-        S: Float
-            + ToPrimitive
-            + FromPrimitive
-            + Ord
-            + PartialOrd
-            + From<f64>
-            + std::fmt::Debug
-            + 'static,
-    {
-        // Track differences (which side the points are on)
-        // weighting[0] corresponds to x, and so on
-        let mut weighting: [i32; 3] = [0, 0, 0];
-
-        // Region bounds (cube)
-        // Specified in three dimensions for possible future expansion
-        // (varying bounds)
-        let num_bound: S = (2.0.powi(self.region.0) as f64).into();
-        let bound: [S; 3] = [num_bound, num_bound, num_bound];
-
-        // -1 if new point too negative, 0 if within, 1 if too positive
-        let new_octant: Vec<i32> = vec![0, 1, 2]
-            .iter()
-            .map(|i| match (point[*i] < -bound[*i], point[*i] >= bound[*i]) {
-                (true, _) => -1,
-                (_, true) => 1,
-                _ => 0,
-            })
-            .collect();
-
-        // If every dimension is within the current region, no need to reside
-        if (new_octant[0] == 0) && (new_octant[1] == 0) && (new_octant[2] == 0) {
-            None
-        } else {
-            // Compute weightings, adding 1 if the leading coordinate is 1
-            // and subtracting 1 if it is 0
-            for (point, _) in self.octree.iter() {
-                let significant_bits = point.decode();
-
-                for i in 0..3 {
-                    if significant_bits[i] == M::zero() {
-                        weighting[i] -= 1;
-                    } else {
-                        weighting[i] += 1;
-                    }
-                }
-            }
-
-            // If it's negative, make 1, and vice versa
-            // (or set direction of expansion to direction of new point)
-            for i in 0..3 {
-                if new_octant[i] != 0 {
-                    weighting[i] = 1 - (new_octant[i] + 1) / 2;
-                } else if weighting[i] <= 0 {
-                    weighting[i] = 1;
-                } else {
-                    weighting[i] = 0;
-                }
-            }
-
-            // Encode octant that we would like to expand in
-            Some(((weighting[0] << 2) | (weighting[1] << 1) | weighting[2]) as u8)
-        }
+    pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
+        self.region.expand_loc(point)
     }
 
     /// Resize the octree as many times as needed to accomodate the given point
@@ -575,16 +531,16 @@ where
     ///
     /// ```
     /// use space::ResizingPointerOctree;
-    /// let mut tree = ResizingPointerOctree::<String, u64>::new();
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
-    /// tree.resize(Vector3::new(1.5, 1.5, 1.5));
+    /// tree.resize(Vector3::new(1.5f64, 1.5f64, 1.5f64));
     /// // Since the region initially covered is [-1, 1) cubically,
     /// // exactly one expansion needed, so that [-2, 2) is covered
     /// // and (1.5, 1.5, 1.5) may be inserted.
     ///
-    /// assert!(tree.region.0 == 1);
+    /// assert!(tree.region.leveled_region.0 == 1);
     ///
-    pub fn resize<S>(&mut self, point: Vector3<S>)
+    pub fn resize(&mut self, point: Vector3<S>)
     where
         S: Float
             + ToPrimitive
@@ -593,24 +549,23 @@ where
             + PartialOrd
             + From<f64>
             + std::fmt::Debug
+            + std::ops::AddAssign
             + 'static,
     {
-        match self.resize_loc(point) {
-            None => {}
-            Some(octant) => {
-                let old_octree = std::mem::replace(&mut self.octree, PointerOctree::<T, M>::new());
+        if let Some(octant) = self.expand_loc(point) {
+            let old_octree = std::mem::replace(&mut self.octree, PointerOctree::<T, M>::new());
 
-                self.octree
-                    .extend(old_octree.into_iter().map(|(morton, item)| {
-                        // Add modified morton to new octree
-                        let octant: M = M::from_u8(octant).unwrap();
-                        let new_morton: M =
-                            (morton >> 3) | (octant << (M::highest_bits().to_usize().unwrap() - 3));
-                        (new_morton, item)
-                    }));
-                self.region.0 += 1;
-                self.resize(point);
-            }
+            self.octree
+                .extend(old_octree.into_iter().map(|(morton, item)| {
+                    // Add modified morton to new octree
+                    let octant: M = M::from_u8(octant).unwrap();
+                    let new_morton: M =
+                        (morton >> 3) | (octant << (M::highest_bits().to_usize().unwrap() - 3));
+                    (new_morton, item)
+                }));
+
+            self.region.expand(octant);
+            self.resize(point);
         }
     }
 
@@ -618,25 +573,18 @@ where
     ///
     /// ```
     /// use space::ResizingPointerOctree;
-    /// let mut tree = ResizingPointerOctree::<String, u64>::new();
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     ///
     /// // This should execute without error, with exactly one expansion needed.
-    /// tree.insert_vector(Vector3::new(1.5, 1.5, 1.5), String::from("test2"));
-    /// assert!(tree.region.0 == 1);
+    /// tree.insert_vector(Vector3::new(1.5f64, 1.5f64, 1.5f64), String::from("test2"));
+    /// assert!(tree.region.leveled_region.0 == 1);
     ///
-    pub fn insert_vector<S>(&mut self, point: Vector3<S>, item: T)
+    pub fn insert_vector(&mut self, point: Vector3<S>, item: T)
     where
-        S: Float
-            + ToPrimitive
-            + FromPrimitive
-            + Ord
-            + PartialOrd
-            + From<f64>
-            + std::fmt::Debug
-            + 'static,
+        S: nalgebra::base::Scalar + alga::general::ClosedSub + std::ops::AddAssign,
     {
-        match self.resize_loc(point) {
+        match self.expand_loc(point) {
             None => self
                 .octree
                 .insert(self.region.discretize(point).unwrap(), item),
@@ -648,7 +596,19 @@ where
     }
 }
 
-impl<T, M> Deref for ResizingPointerOctree<T, M> {
+impl<T, M, S> Deref for ResizingPointerOctree<T, M, S>
+where
+    M: Morton,
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + Ord
+        + PartialOrd
+        + From<f64>
+        + std::fmt::Debug
+        + Sub
+        + 'static,
+{
     type Target = PointerOctree<T, M>;
 
     fn deref(&self) -> &Self::Target {
@@ -656,7 +616,19 @@ impl<T, M> Deref for ResizingPointerOctree<T, M> {
     }
 }
 
-impl<T, M> DerefMut for ResizingPointerOctree<T, M> {
+impl<T, M, S> DerefMut for ResizingPointerOctree<T, M, S>
+where
+    M: Morton,
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + Ord
+        + PartialOrd
+        + From<f64>
+        + std::fmt::Debug
+        + Sub
+        + 'static,
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.octree
     }

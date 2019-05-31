@@ -168,3 +168,110 @@ impl LeveledRegion {
         }
     }
 }
+
+/// Defines a ```LeveledRegion``` from [-2^n, 2^n) shifted so that it is centered at ```center```.
+#[derive(Copy, Clone, Debug)]
+pub struct CenteredLeveledRegion<S>
+where
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + Ord
+        + PartialOrd
+        + From<f64>
+        + std::fmt::Debug
+        + 'static,
+{
+    /// Represents a region from [-2**n, 2**n) shifted by center
+    pub leveled_region: LeveledRegion,
+
+    /// Represents the center of the CenteredLeveledRegion
+    pub center: Vector3<S>,
+}
+
+impl<S> CenteredLeveledRegion<S>
+where
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + Ord
+        + PartialOrd
+        + From<f64>
+        + std::fmt::Debug
+        + Copy
+        + 'static,
+{
+    /// Return octant where old points should be placed upon resizing
+    /// based upon the the position of the new point
+    pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
+        let radius: S = (2.0.powi(self.leveled_region.0) as f64).into();
+        let lower_bound: Vector3<S> = self.center.map(|p| p - radius);
+        let upper_bound: Vector3<S> = self.center.map(|p| p + radius);
+
+        // Octant where the old region should lie based upon the new point
+        // (-1 if within), note 1 more positive, 0 more negative
+        let new_octant: Vec<i32> = vec![0, 1, 2]
+            .iter()
+            .map(
+                |i| match (point[*i] < lower_bound[*i], point[*i] >= upper_bound[*i]) {
+                    (true, _) => 1, // new point is less than existing region
+                    (_, true) => 0, // new point is greater than existing region
+                    _ => -1,        // new point is within existing region
+                },
+            )
+            .collect();
+
+        if (new_octant[0] == 0) && (new_octant[1] == 0) && (new_octant[2] == 0) {
+            None
+        } else {
+            let preferred_octant: Vec<i32> = vec![0, 1, 2]
+                .iter()
+                .map(|i| match (new_octant[*i], point[*i] < self.center[*i]) {
+                    (-1, true) => 1,
+                    (-1, false) => 0,
+                    (x, _) => x,
+                })
+                .collect();
+            Some(
+                ((preferred_octant[0] << 2) | (preferred_octant[1] << 1) | preferred_octant[0])
+                    as u8,
+            )
+        }
+    }
+
+    /// Allows discretization of a point, taking into account the shifted center of the
+    /// ```CenteredLeveledRegion```.
+    pub fn discretize<M>(self, point: Vector3<S>) -> Option<M>
+    where
+        M: Morton + std::fmt::Debug + 'static,
+        S: nalgebra::base::Scalar + alga::general::ClosedSub,
+    {
+        self.leveled_region.discretize(point - self.center)
+    }
+
+    /// Expand the ```CenteredLeveledRegion``` by one "notch" (1 level of the ```LeveledRegion```)
+    /// The octant represents the octant where the old points should be moved
+    /// (as in the ```expand_loc``` function)
+    pub fn expand(&mut self, octant: u8)
+    where
+        S: std::ops::AddAssign,
+    {
+        // Adjust center
+        let center_adjust: Vec<S> = vec![0, 1, 2]
+            .iter()
+            .map(|i| {
+                // New octant is in the positive half, so the center is shifted left (negative)
+                if octant & (1 << (2 - *i)) == 1 {
+                    (-(2.0.powi(self.leveled_region.0)) as f64).into()
+                } else {
+                    (2.0.powi(self.leveled_region.0) as f64).into()
+                }
+            })
+            .collect();
+
+        for i in 0..3 {
+            self.center[i] += center_adjust[i];
+        }
+        self.leveled_region.0 += 1;
+    }
+}
