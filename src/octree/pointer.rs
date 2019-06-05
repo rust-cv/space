@@ -481,12 +481,12 @@ where
     /// Create an empty resizing octree. Calls Default impl.
     /// ```n``` represents the parameter of the associated ```LeveledRegion```, while
     /// ```center``` represents the center of the ```LeveledRegion```.
-    pub fn new() -> Self {
+    pub fn new(n: i32, center: Vector3<S>) -> Self {
         Self {
             octree: PointerOctree::default(),
             region: CenteredLeveledRegion {
-                leveled_region: LeveledRegion(0),
-                center: Vector3::new((0f64).into(), (0f64).into(), (0f64).into()),
+                leveled_region: LeveledRegion(n),
+                center,
             },
         }
     }
