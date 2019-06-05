@@ -551,7 +551,6 @@ where
                 .extend(old_octree.into_iter().map(|(morton, item)| {
                     // Add modified morton to new octree
                     let octant: M = M::from_u8(octant).unwrap();
-                    println!("{}", M::highest_bits().to_usize().unwrap() - 3);
                     let new_morton: M = (morton >> 3) | (octant << (3 * M::dim_bits() - 3));
                     (new_morton, item)
                 }));
