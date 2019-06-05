@@ -173,14 +173,7 @@ impl LeveledRegion {
 #[derive(Copy, Clone, Debug)]
 pub struct CenteredLeveledRegion<S>
 where
-    S: Float
-        + ToPrimitive
-        + FromPrimitive
-        + Ord
-        + PartialOrd
-        + From<f64>
-        + std::fmt::Debug
-        + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + From<f64> + std::fmt::Debug + 'static,
 {
     /// Represents a region from [-2**n, 2**n) shifted by center
     pub leveled_region: LeveledRegion,
@@ -194,7 +187,6 @@ where
     S: Float
         + ToPrimitive
         + FromPrimitive
-        + Ord
         + PartialOrd
         + From<f64>
         + std::fmt::Debug
