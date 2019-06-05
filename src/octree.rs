@@ -203,10 +203,10 @@ where
 
         // Octant where the old region should lie based upon the new point
         // (-1 if within), note 1 more positive, 0 more negative
-        let new_octant: Vec<i32> = vec![0, 1, 2]
-            .iter()
+        // [0] x, [1] y, [2] z
+        let new_octant: Vec<i32> = (0..3)
             .map(
-                |i| match (point[*i] < lower_bound[*i], point[*i] >= upper_bound[*i]) {
+                |i| match (point[i] < lower_bound[i], point[i] >= upper_bound[i]) {
                     (true, _) => 1, // new point is less than existing region
                     (_, true) => 0, // new point is greater than existing region
                     _ => -1,        // new point is within existing region
@@ -217,16 +217,16 @@ where
         if (new_octant[0] == -1) && (new_octant[1] == -1) && (new_octant[2] == -1) {
             None
         } else {
-            let preferred_octant: Vec<i32> = vec![0, 1, 2]
-                .iter()
-                .map(|i| match (new_octant[*i], point[*i] < self.center[*i]) {
+            let preferred_octant: Vec<i32> = (0..3)
+                .map(|i| match (new_octant[i], point[i] < self.center[i]) {
                     (-1, true) => 1,
                     (-1, false) => 0,
                     (x, _) => x,
                 })
                 .collect();
             Some(
-                ((preferred_octant[0] << 2) | (preferred_octant[1] << 1) | preferred_octant[0])
+                // zyx format
+                ((preferred_octant[2] << 2) | (preferred_octant[1] << 1) | preferred_octant[0])
                     as u8,
             )
         }
@@ -250,21 +250,16 @@ where
         S: std::ops::AddAssign,
     {
         // Adjust center
-        let center_adjust: Vec<S> = vec![0, 1, 2]
-            .iter()
-            .map(|i| {
-                // New octant is in the positive half, so the center is shifted left (negative)
-                if octant & (1 << (2 - *i)) == 1 {
-                    (-(2.0.powi(self.leveled_region.0)) as f64).into()
-                } else {
-                    (2.0.powi(self.leveled_region.0) as f64).into()
-                }
-            })
-            .collect();
+        let center_adjust: Vector3<S> = Vector3::from_iterator((0..3).map(|i| {
+            // New octant is in the positive half, so the center is shifted left (negative)
+            if octant & (1 << i) != 0 {
+                (-(2.0.powi(self.leveled_region.0)) as f64).into()
+            } else {
+                (2.0.powi(self.leveled_region.0) as f64).into()
+            }
+        }));
 
-        for i in 0..3 {
-            self.center[i] += center_adjust[i];
-        }
+        self.center += center_adjust;
         self.leveled_region.0 += 1;
     }
 }
