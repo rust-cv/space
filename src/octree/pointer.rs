@@ -545,7 +545,6 @@ where
     {
         if let Some(octant) = self.expand_loc(point) {
             let old_octree = std::mem::replace(&mut self.octree, PointerOctree::<T, M>::new());
-            println!("{}", M::highest_bits().to_usize().unwrap() - 3);
 
             self.octree
                 .extend(old_octree.into_iter().map(|(morton, item)| {
