@@ -5,6 +5,7 @@ mod pointer;
 
 pub use self::linear::LinearOctree;
 pub use self::pointer::PointerOctree;
+pub use self::pointer::ResizingPointerOctree;
 
 use crate::morton::*;
 use nalgebra::Vector3;
@@ -213,7 +214,7 @@ where
             )
             .collect();
 
-        if (new_octant[0] == 0) && (new_octant[1] == 0) && (new_octant[2] == 0) {
+        if (new_octant[0] == -1) && (new_octant[1] == -1) && (new_octant[2] == -1) {
             None
         } else {
             let preferred_octant: Vec<i32> = vec![0, 1, 2]

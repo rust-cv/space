@@ -38,16 +38,12 @@ pub struct PointerOctree<T, M> {
 /// A pointer octree with the capability of resizing.
 pub struct ResizingPointerOctree<T, M, S>
 where
-    S: Float
-        + ToPrimitive
-        + FromPrimitive
-        + Ord
-        + PartialOrd
-        + From<f64>
-        + std::fmt::Debug
-        + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + From<f64> + std::fmt::Debug + 'static,
 {
+    /// Octree for the ResizingPointerOctree
     pub octree: PointerOctree<T, M>,
+
+    /// CenteredLeveledRegion for the ResizingPointerOctree
     pub region: CenteredLeveledRegion<S>,
 }
 
@@ -320,14 +316,14 @@ where
     /// tree.insert(m2, "m2".to_owned());
     ///
     /// let mut i = 0;
-    /// let mut items: Vec<String> = vec![];
-    /// for (morton, item) in &tree.iter() {
+    /// let mut mortons: Vec<u64> = vec![];
+    /// for (morton, item) in tree.iter() {
     ///     i += 1;
-    ///     items.push(item);
+    ///     mortons.push(morton);
     /// }
     /// assert!(i == 2);
-    /// assert!(items.contains("m1"));
-    /// assert!(items.contains("m2"));
+    /// assert!(mortons.contains(&Morton::encode(Vector3::<u64>::new(1, 2, 3))));
+    /// assert!(mortons.contains(&Morton::encode(Vector3::<u64>::new(4, 5, 6))));
     /// ```
     pub fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         self.tree.iter()
@@ -480,14 +476,7 @@ where
 impl<T, M, S> ResizingPointerOctree<T, M, S>
 where
     M: Morton,
-    S: Float
-        + ToPrimitive
-        + FromPrimitive
-        + Ord
-        + PartialOrd
-        + From<f64>
-        + std::fmt::Debug
-        + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + From<f64> + std::fmt::Debug + 'static,
 {
     /// Create an empty resizing octree. Calls Default impl.
     /// ```n``` represents the parameter of the associated ```LeveledRegion```, while
@@ -512,6 +501,8 @@ where
     ///
     /// ```
     /// use space::ResizingPointerOctree;
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
     /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     ///
@@ -519,9 +510,8 @@ where
     /// // This is outside all the bounds of the current octree, so the
     /// // point itself dictates the direction of expansion (i.e. 0b00000111)
     /// // Since the new point will be in octant 0b111, the returned octant will be 0b000.
-    ///
-    /// assert!(expand_loc == 0);
-    ///
+    /// assert!(expand_loc == Some(0));
+    /// ```
     pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
         self.region.expand_loc(point)
     }
@@ -531,6 +521,8 @@ where
     ///
     /// ```
     /// use space::ResizingPointerOctree;
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
     /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     /// tree.resize(Vector3::new(1.5f64, 1.5f64, 1.5f64));
@@ -539,13 +531,12 @@ where
     /// // and (1.5, 1.5, 1.5) may be inserted.
     ///
     /// assert!(tree.region.leveled_region.0 == 1);
-    ///
+    /// ```
     pub fn resize(&mut self, point: Vector3<S>)
     where
         S: Float
             + ToPrimitive
             + FromPrimitive
-            + Ord
             + PartialOrd
             + From<f64>
             + std::fmt::Debug
@@ -554,13 +545,14 @@ where
     {
         if let Some(octant) = self.expand_loc(point) {
             let old_octree = std::mem::replace(&mut self.octree, PointerOctree::<T, M>::new());
+            println!("{}", M::highest_bits().to_usize().unwrap() - 3);
 
             self.octree
                 .extend(old_octree.into_iter().map(|(morton, item)| {
                     // Add modified morton to new octree
                     let octant: M = M::from_u8(octant).unwrap();
-                    let new_morton: M =
-                        (morton >> 3) | (octant << (M::highest_bits().to_usize().unwrap() - 3));
+                    println!("{}", M::highest_bits().to_usize().unwrap() - 3);
+                    let new_morton: M = (morton >> 3) | (octant << (3 * M::dim_bits() - 3));
                     (new_morton, item)
                 }));
 
@@ -573,6 +565,8 @@ where
     ///
     /// ```
     /// use space::ResizingPointerOctree;
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
     /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     ///
@@ -602,7 +596,6 @@ where
     S: Float
         + ToPrimitive
         + FromPrimitive
-        + Ord
         + PartialOrd
         + From<f64>
         + std::fmt::Debug
@@ -622,7 +615,6 @@ where
     S: Float
         + ToPrimitive
         + FromPrimitive
-        + Ord
         + PartialOrd
         + From<f64>
         + std::fmt::Debug
