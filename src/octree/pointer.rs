@@ -283,27 +283,31 @@ where
             Internal::Node(box Oct { ref mut children }) => {
                 let subindex = morton.get_level(level);
                 let res = Self::remove_helper(&mut children[subindex], morton, level + 1);
-                let num_children = (0..8).fold(0, |n, i| match children[i] {
-                    Internal::None => n,
-                    _ => n + 1,
-                });
-                if num_children == 0 {
-                    let mut leaf = Internal::None;
-                    std::mem::swap(&mut leaf, tree);
-                };
+                if children
+                    .iter()
+                    .filter(|c| match c {
+                        Internal::None => false,
+                        _ => true,
+                    })
+                    .count()
+                    == 0
+                {
+                    std::mem::swap(&mut Internal::None, tree);
+                }
                 res
             }
-            Internal::None => None,
-            tree_part => {
-                let mut clean_leaf = Internal::None;
-                std::mem::swap(&mut clean_leaf, tree_part);
-                match clean_leaf {
-                    Internal::Leaf(leaf_item, _) => Some(leaf_item),
-                    _ => unreachable!(
+            Internal::Leaf(_, _) => {
+                let mut leaf = Internal::None;
+                std::mem::swap(&mut leaf, tree);
+                if let Internal::Leaf(leaf_item, _) = leaf {
+                    Some(leaf_item)
+                } else {
+                    unreachable!(
                         "space::Octree::PointerOctree(): Must have leaf item in this code area"
-                    ),
+                    )
                 }
             }
+            Internal::None => None,
         }
     }
 
