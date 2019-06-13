@@ -261,82 +261,48 @@ where
     /// let fetched_value = tree.remove(m);
     /// assert!(fetched_value.is_none());
     ///
+    /// for i in 0..1000000 {
+    ///     let x: u64 = rand::random();
+    ///     let y: u64 = rand::random();
+    ///     let z: u64 = rand::random();
+    ///     let m = Morton::encode(Vector3::<u64>::new(x, y, z));
+    ///     tree.insert(m, "hello".to_owned());
+    /// }
+    ///
     /// tree.insert(m, "hello".to_owned());
     ///
     /// let fetched_value = tree.remove(m);
     /// assert!(fetched_value == Some("hello".to_owned()));
     /// ```
     pub fn remove(&mut self, morton: M) -> Option<T> {
-        // Traverse the tree down to the node we need to operate on.
-        let mut initial_path: Vec<Vec<usize>> = vec![];
-        let (mut tree_part, _, final_path) = (0..M::dim_bits())
-            .fold_while(
-                (&mut self.tree, 0, &mut initial_path),
-                |(tree_part, old_ix, path), i| {
-                    use itertools::FoldWhile::{Continue, Done};
-                    match tree_part {
-                        Internal::Node(box Oct { ref mut children }) => {
-                            let subindex = morton.get_level(i);
-                            match path.pop() {
-                                None => {
-                                    path.push(vec![subindex]);
-                                }
-                                Some(last_path) => {
-                                    let mut curr_path = last_path.clone();
-                                    curr_path.push(subindex);
-                                    path.push(curr_path);
-                                }
-                            }
+        Self::remove_helper(&mut self.tree, morton, 0)
+    }
 
-                            Continue((&mut children[subindex], i, path))
-                        }
-                        Internal::Leaf(_, _) => Done((tree_part, old_ix, path)),
-                        Internal::None => Done((tree_part, old_ix, path)),
-                    }
-                },
-            )
-            .into_inner();
-
-        let mut leaf = Internal::None;
-        std::mem::swap(&mut leaf, tree_part);
-
-        // Go through the path in reverse order (from most recent to least)
-        // and remove any internal nodes with zero leafs.
-        let mut valid = false;
-        while let Some(path) = final_path.pop() {
-            let mut path = path.clone();
-            path.reverse();
-            if !valid {
-                let mut curr = &mut self.tree;
-                for i in path {
-                    if let Internal::Node(box Oct { ref mut children }) = curr {
-                        curr = &mut children[i];
-                    }
-                }
-
-                if let Internal::Node(box Oct { ref mut children }) = curr {
-                    let num_children = (0..8).fold(0, |n, i| match children[i] {
-                        Internal::None => n,
-                        _ => n + 1,
-                    });
-
-                    if num_children == 0 {
-                        let mut leaf = Internal::None;
-                        std::mem::swap(&mut leaf, curr);
-                    } else {
-                        valid = true;
-                    }
-                }
+    fn remove_helper(tree: &mut Internal<T, M>, morton: M, level: usize) -> Option<T> {
+        match tree {
+            Internal::Node(box Oct { ref mut children }) => {
+                let subindex = morton.get_level(level);
+                let res = Self::remove_helper(&mut children[subindex], morton, level + 1);
+                let num_children = (0..8).fold(0, |n, i| match children[i] {
+                    Internal::None => n,
+                    _ => n + 1,
+                });
+                if num_children == 0 {
+                    let mut leaf = Internal::None;
+                    std::mem::swap(&mut leaf, tree);
+                };
+                res
             }
-        }
-
-        match leaf {
-            Internal::Leaf(leaf_item, _) => Some(leaf_item),
             Internal::None => None,
-            _ => {
-                unreachable!(
-                    "space::Octree::PointerOctree(): can only get None or Leaf in this code area"
-                );
+            tree_part => {
+                let mut clean_leaf = Internal::None;
+                std::mem::swap(&mut clean_leaf, tree_part);
+                match clean_leaf {
+                    Internal::Leaf(leaf_item, _) => Some(leaf_item),
+                    _ => unreachable!(
+                        "space::Octree::PointerOctree(): Must have leaf item in this code area"
+                    ),
+                }
             }
         }
     }
