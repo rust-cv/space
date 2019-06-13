@@ -268,23 +268,67 @@ where
     /// ```
     pub fn remove(&mut self, morton: M) -> Option<T> {
         // Traverse the tree down to the node we need to operate on.
-        let (tree_part, _) = (0..M::dim_bits())
-            .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
-                use itertools::FoldWhile::{Continue, Done};
-                match node {
-                    Internal::Node(box Oct { ref mut children }) => {
-                        // The index into the array to access the next octree node
-                        let subindex = morton.get_level(i);
-                        Continue((&mut children[subindex], i))
+        let mut initial_path: Vec<Vec<usize>> = vec![];
+        let (mut tree_part, _, final_path) = (0..M::dim_bits())
+            .fold_while(
+                (&mut self.tree, 0, &mut initial_path),
+                |(tree_part, old_ix, path), i| {
+                    use itertools::FoldWhile::{Continue, Done};
+                    match tree_part {
+                        Internal::Node(box Oct { ref mut children }) => {
+                            let subindex = morton.get_level(i);
+                            match path.pop() {
+                                None => {
+                                    path.push(vec![subindex]);
+                                }
+                                Some(last_path) => {
+                                    let mut curr_path = last_path.clone();
+                                    curr_path.push(subindex);
+                                    path.push(curr_path);
+                                }
+                            }
+
+                            Continue((&mut children[subindex], i, path))
+                        }
+                        Internal::Leaf(_, _) => Done((tree_part, old_ix, path)),
+                        Internal::None => Done((tree_part, old_ix, path)),
                     }
-                    Internal::Leaf(_, _) => Done((node, old_ix)),
-                    Internal::None => Done((node, old_ix)),
-                }
-            })
+                },
+            )
             .into_inner();
 
         let mut leaf = Internal::None;
         std::mem::swap(&mut leaf, tree_part);
+
+        // Go through the path in reverse order (from most recent to least)
+        // and remove any internal nodes with zero leafs.
+        let mut valid = false;
+        while let Some(path) = final_path.pop() {
+            let mut path = path.clone();
+            path.reverse();
+            if !valid {
+                let mut curr = &mut self.tree;
+                for i in path {
+                    if let Internal::Node(box Oct { ref mut children }) = curr {
+                        curr = &mut children[i];
+                    }
+                }
+
+                if let Internal::Node(box Oct { ref mut children }) = curr {
+                    let num_children = (0..8).fold(0, |n, i| match children[i] {
+                        Internal::None => n,
+                        _ => n + 1,
+                    });
+
+                    if num_children == 0 {
+                        let mut leaf = Internal::None;
+                        std::mem::swap(&mut leaf, curr);
+                    } else {
+                        valid = true;
+                    }
+                }
+            }
+        }
 
         match leaf {
             Internal::Leaf(leaf_item, _) => Some(leaf_item),
@@ -503,7 +547,7 @@ where
     /// use space::ResizingPointerOctree;
     /// use space::Morton;
     /// use nalgebra::Vector3;
-    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new(0, Vector3::new(0.0, 0.0, 0.0));
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     ///
     /// let expand_loc = tree.expand_loc(Vector3::new(2f64, 2f64, 2f64));
@@ -523,7 +567,7 @@ where
     /// use space::ResizingPointerOctree;
     /// use space::Morton;
     /// use nalgebra::Vector3;
-    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new(0, Vector3::new(0.0, 0.0, 0.0));
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     /// tree.resize(Vector3::new(1.5f64, 1.5f64, 1.5f64));
     /// // Since the region initially covered is [-1, 1) cubically,
@@ -565,7 +609,7 @@ where
     /// use space::ResizingPointerOctree;
     /// use space::Morton;
     /// use nalgebra::Vector3;
-    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new();
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new(0, Vector3::new(0.0, 0.0, 0.0));
     /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
     ///
     /// // This should execute without error, with exactly one expansion needed.
