@@ -38,7 +38,7 @@ pub struct PointerOctree<T, M> {
 /// A pointer octree with the capability of resizing.
 pub struct ResizingPointerOctree<T, M, S>
 where
-    S: Float + ToPrimitive + FromPrimitive + PartialOrd + From<f64> + std::fmt::Debug + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
 {
     /// Octree for the ResizingPointerOctree
     pub octree: PointerOctree<T, M>,
@@ -490,7 +490,7 @@ where
 impl<T, M, S> ResizingPointerOctree<T, M, S>
 where
     M: Morton,
-    S: Float + ToPrimitive + FromPrimitive + PartialOrd + From<f64> + std::fmt::Debug + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
 {
     /// Create an empty resizing octree. Calls Default impl.
     /// ```n``` represents the parameter of the associated ```LeveledRegion```, while
@@ -547,15 +547,7 @@ where
     /// assert!(tree.region.leveled_region.0 == 1);
     /// ```
     pub fn resize(&mut self, point: Vector3<S>)
-    where
-        S: Float
-            + ToPrimitive
-            + FromPrimitive
-            + PartialOrd
-            + From<f64>
-            + std::fmt::Debug
-            + std::ops::AddAssign
-            + 'static,
+    where S: std::ops::AddAssign,
     {
         if let Some(octant) = self.expand_loc(point) {
             let old_octree = std::mem::replace(&mut self.octree, PointerOctree::<T, M>::new());
@@ -609,7 +601,6 @@ where
         + ToPrimitive
         + FromPrimitive
         + PartialOrd
-        + From<f64>
         + std::fmt::Debug
         + Sub
         + 'static,
@@ -628,7 +619,6 @@ where
         + ToPrimitive
         + FromPrimitive
         + PartialOrd
-        + From<f64>
         + std::fmt::Debug
         + Sub
         + 'static,

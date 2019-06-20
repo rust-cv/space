@@ -174,7 +174,7 @@ impl LeveledRegion {
 #[derive(Copy, Clone, Debug)]
 pub struct CenteredLeveledRegion<S>
 where
-    S: Float + ToPrimitive + FromPrimitive + PartialOrd + From<f64> + std::fmt::Debug + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
 {
     /// Represents a region from [-2**n, 2**n) shifted by center
     pub leveled_region: LeveledRegion,
@@ -189,7 +189,6 @@ where
         + ToPrimitive
         + FromPrimitive
         + PartialOrd
-        + From<f64>
         + std::fmt::Debug
         + Copy
         + 'static,
@@ -197,7 +196,7 @@ where
     /// Return octant where old points should be placed upon resizing
     /// based upon the the position of the new point
     pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
-        let radius: S = (2.0.powi(self.leveled_region.0) as f64).into();
+        let radius: S = S::from(2.0.powi(self.leveled_region.0) as f64).expect("space::CenteredLeveledRegion::expand_loc: Unable to convert f64 to S");
         let lower_bound: Vector3<S> = self.center.map(|p| p - radius);
         let upper_bound: Vector3<S> = self.center.map(|p| p + radius);
 
@@ -253,9 +252,9 @@ where
         let center_adjust: Vector3<S> = Vector3::from_iterator((0..3).map(|i| {
             // New octant is in the positive half, so the center is shifted left (negative)
             if octant & (1 << i) != 0 {
-                (-(2.0.powi(self.leveled_region.0)) as f64).into()
+                S::from_f64(-(2.0.powi(self.leveled_region.0)) as f64).expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
             } else {
-                (2.0.powi(self.leveled_region.0) as f64).into()
+                S::from_f64(2.0.powi(self.leveled_region.0) as f64).expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
             }
         }));
 
