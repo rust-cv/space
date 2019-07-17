@@ -11,6 +11,8 @@ use crate::morton::*;
 use nalgebra::Vector3;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 
+use serde::{Deserialize, Serialize};
+
 /// Implement this trait to perform a tree fold across the octree.
 ///
 /// This will convert leaf nodes into the internal `Sum` type and then propogate them up to parent regions by
@@ -137,7 +139,7 @@ impl<Item, M> Folder<Item, M> for NullFolder {
 }
 
 /// This defines a region from [-2**n, 2**n).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct LeveledRegion(pub i32);
 
 impl LeveledRegion {
@@ -171,7 +173,7 @@ impl LeveledRegion {
 }
 
 /// Defines a ```LeveledRegion``` from [-2^n, 2^n) shifted so that it is centered at ```center```.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CenteredLeveledRegion<S>
 where
     S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
@@ -180,23 +182,22 @@ where
     pub leveled_region: LeveledRegion,
 
     /// Represents the center of the CenteredLeveledRegion
+    #[serde(bound(
+        serialize = "Vector3<S>: Serialize",
+        deserialize = "Vector3<S>: Deserialize<'de>"
+    ))]
     pub center: Vector3<S>,
 }
 
 impl<S> CenteredLeveledRegion<S>
 where
-    S: Float
-        + ToPrimitive
-        + FromPrimitive
-        + PartialOrd
-        + std::fmt::Debug
-        + Copy
-        + 'static,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + Copy + 'static,
 {
     /// Return octant where old points should be placed upon resizing
     /// based upon the the position of the new point
     pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
-        let radius: S = S::from(2.0.powi(self.leveled_region.0) as f64).expect("space::CenteredLeveledRegion::expand_loc: Unable to convert f64 to S");
+        let radius: S = S::from(2.0.powi(self.leveled_region.0) as f64)
+            .expect("space::CenteredLeveledRegion::expand_loc: Unable to convert f64 to S");
         let lower_bound: Vector3<S> = self.center.map(|p| p - radius);
         let upper_bound: Vector3<S> = self.center.map(|p| p + radius);
 
@@ -252,9 +253,11 @@ where
         let center_adjust: Vector3<S> = Vector3::from_iterator((0..3).map(|i| {
             // New octant is in the positive half, so the center is shifted left (negative)
             if octant & (1 << i) != 0 {
-                S::from_f64(-(2.0.powi(self.leveled_region.0)) as f64).expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
+                S::from_f64(-(2.0.powi(self.leveled_region.0)) as f64)
+                    .expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
             } else {
-                S::from_f64(2.0.powi(self.leveled_region.0) as f64).expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
+                S::from_f64(2.0.powi(self.leveled_region.0) as f64)
+                    .expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
             }
         }));
 
