@@ -21,6 +21,9 @@ rand = { version = "0.5.5", features = ["std"] }
 smallvec = { version = "0.6.7", default-features = false }
 bitintr = { version = "0.2.0", default-features = false }
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
+alga = "0.9.1"
+serde_json = "1.0.39"
+serde = { version = "1.0.91", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.2", default-features = false }

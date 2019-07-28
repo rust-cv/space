@@ -5,10 +5,13 @@ mod pointer;
 
 pub use self::linear::LinearOctree;
 pub use self::pointer::PointerOctree;
+pub use self::pointer::ResizingPointerOctree;
 
 use crate::morton::*;
 use nalgebra::Vector3;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
+
+use serde::{Deserialize, Serialize};
 
 /// Implement this trait to perform a tree fold across the octree.
 ///
@@ -136,7 +139,7 @@ impl<Item, M> Folder<Item, M> for NullFolder {
 }
 
 /// This defines a region from [-2**n, 2**n).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct LeveledRegion(pub i32);
 
 impl LeveledRegion {
@@ -166,5 +169,99 @@ impl LeveledRegion {
                 (point.map(|n| (n + bound) / (S::one() + S::one()).powi(self.0 + 1))).into();
             Some(m)
         }
+    }
+}
+
+/// Defines a ```LeveledRegion``` from [-2^n, 2^n) shifted so that it is centered at ```center```.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct CenteredLeveledRegion<S>
+where
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
+{
+    /// Represents a region from [-2**n, 2**n) shifted by center
+    pub leveled_region: LeveledRegion,
+
+    /// Represents the center of the CenteredLeveledRegion
+    #[serde(bound(
+        serialize = "Vector3<S>: Serialize",
+        deserialize = "Vector3<S>: Deserialize<'de>"
+    ))]
+    pub center: Vector3<S>,
+}
+
+impl<S> CenteredLeveledRegion<S>
+where
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + Copy + 'static,
+{
+    /// Return octant where old points should be placed upon resizing
+    /// based upon the the position of the new point
+    pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
+        let radius: S = S::from(2.0.powi(self.leveled_region.0) as f64)
+            .expect("space::CenteredLeveledRegion::expand_loc: Unable to convert f64 to S");
+        let lower_bound: Vector3<S> = self.center.map(|p| p - radius);
+        let upper_bound: Vector3<S> = self.center.map(|p| p + radius);
+
+        // Octant where the old region should lie based upon the new point
+        // (-1 if within), note 1 more positive, 0 more negative
+        // [0] x, [1] y, [2] z
+        let new_octant: Vec<i32> = (0..3)
+            .map(
+                |i| match (point[i] < lower_bound[i], point[i] >= upper_bound[i]) {
+                    (true, _) => 1, // new point is less than existing region
+                    (_, true) => 0, // new point is greater than existing region
+                    _ => -1,        // new point is within existing region
+                },
+            )
+            .collect();
+
+        if (new_octant[0] == -1) && (new_octant[1] == -1) && (new_octant[2] == -1) {
+            None
+        } else {
+            let preferred_octant: Vec<i32> = (0..3)
+                .map(|i| match (new_octant[i], point[i] < self.center[i]) {
+                    (-1, true) => 1,
+                    (-1, false) => 0,
+                    (x, _) => x,
+                })
+                .collect();
+            Some(
+                // zyx format
+                ((preferred_octant[2] << 2) | (preferred_octant[1] << 1) | preferred_octant[0])
+                    as u8,
+            )
+        }
+    }
+
+    /// Allows discretization of a point, taking into account the shifted center of the
+    /// ```CenteredLeveledRegion```.
+    pub fn discretize<M>(self, point: Vector3<S>) -> Option<M>
+    where
+        M: Morton + std::fmt::Debug + 'static,
+        S: nalgebra::base::Scalar + alga::general::ClosedSub,
+    {
+        self.leveled_region.discretize(point - self.center)
+    }
+
+    /// Expand the ```CenteredLeveledRegion``` by one "notch" (1 level of the ```LeveledRegion```)
+    /// The octant represents the octant where the old points should be moved
+    /// (as in the ```expand_loc``` function)
+    pub fn expand(&mut self, octant: u8)
+    where
+        S: std::ops::AddAssign,
+    {
+        // Adjust center
+        let center_adjust: Vector3<S> = Vector3::from_iterator((0..3).map(|i| {
+            // New octant is in the positive half, so the center is shifted left (negative)
+            if octant & (1 << i) != 0 {
+                S::from_f64(-(2.0.powi(self.leveled_region.0)) as f64)
+                    .expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
+            } else {
+                S::from_f64(2.0.powi(self.leveled_region.0) as f64)
+                    .expect("space::CenteredLeveledRegion::expand: Unable to convert f64 to S")
+            }
+        }));
+
+        self.center += center_adjust;
+        self.leveled_region.0 += 1;
     }
 }

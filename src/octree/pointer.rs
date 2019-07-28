@@ -2,11 +2,19 @@ use crate::*;
 
 use itertools::Itertools;
 
+use std::ops::Sub;
+
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
 use std::default::Default;
+
+use num_traits::{Float, FromPrimitive, ToPrimitive};
+
+use nalgebra::Vector3;
+
+use std::ops::{Deref, DerefMut};
 
 use log::*;
 
@@ -25,6 +33,18 @@ impl<T> Oct<T> {
 pub struct PointerOctree<T, M> {
     tree: Internal<T, M>,
     count: usize,
+}
+
+/// A pointer octree with the capability of resizing.
+pub struct ResizingPointerOctree<T, M, S>
+where
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
+{
+    /// Octree for the ResizingPointerOctree
+    pub octree: PointerOctree<T, M>,
+
+    /// CenteredLeveledRegion for the ResizingPointerOctree
+    pub region: CenteredLeveledRegion<S>,
 }
 
 impl<T, M> Default for PointerOctree<T, M> {
@@ -240,49 +260,92 @@ where
     ///
     /// let fetched_value = tree.remove(m);
     /// assert!(fetched_value.is_none());
-    /// 
+    ///
+    /// for i in 0..1000000 {
+    ///     let x: u64 = rand::random();
+    ///     let y: u64 = rand::random();
+    ///     let z: u64 = rand::random();
+    ///     let m = Morton::encode(Vector3::<u64>::new(x, y, z));
+    ///     tree.insert(m, "hello".to_owned());
+    /// }
+    ///
     /// tree.insert(m, "hello".to_owned());
-    /// 
+    ///
     /// let fetched_value = tree.remove(m);
     /// assert!(fetched_value == Some("hello".to_owned()));
     /// ```
     pub fn remove(&mut self, morton: M) -> Option<T> {
-        // Traverse the tree down to the node we need to operate on.
-        let (tree_part, _) = (0..M::dim_bits())
-            .fold_while((&mut self.tree, 0), |(node, old_ix), i| {
-                use itertools::FoldWhile::{Continue, Done};
-                match node {
-                    Internal::Node(box Oct { ref mut children }) => {
-                        // The index into the array to access the next octree node
-                        let subindex = morton.get_level(i);
-                        Continue((&mut children[subindex], i))
-                    }
-                    Internal::Leaf(_, _) => Done((node, old_ix)),
-                    Internal::None => Done((node, old_ix)),
-                }
-            })
-            .into_inner();
-        
-        let mut leaf = Internal::None;
-        std::mem::swap(&mut leaf, tree_part);
+        Self::remove_helper(&mut self.tree, morton, 0)
+    }
 
-        match leaf {
-            Internal::Leaf(leaf_item, _) => {
-                Some(leaf_item)
+    fn remove_helper(tree: &mut Internal<T, M>, morton: M, level: usize) -> Option<T> {
+        match tree {
+            Internal::Node(box Oct { ref mut children }) => {
+                let subindex = morton.get_level(level);
+                let res = Self::remove_helper(&mut children[subindex], morton, level + 1);
+                if children
+                    .iter()
+                    .filter(|c| match c {
+                        Internal::None => false,
+                        _ => true,
+                    })
+                    .count()
+                    == 0
+                {
+                    std::mem::swap(&mut Internal::None, tree);
+                }
+                res
+            }
+            Internal::Leaf(_, _) => {
+                let mut leaf = Internal::None;
+                std::mem::swap(&mut leaf, tree);
+                if let Internal::Leaf(leaf_item, _) = leaf {
+                    Some(leaf_item)
+                } else {
+                    unreachable!(
+                        "space::Octree::PointerOctree(): Must have leaf item in this code area"
+                    )
+                }
             }
             Internal::None => None,
-            _ => {
-                unreachable!(
-                    "space::Octree::PointerOctree(): can only get None or Leaf in this code area"
-                );
-            }
         }
     }
 
     /// Iterate over all octree nodes and their morton codes.
+    ///
+    /// ```
+    /// use space::{PointerOctree, Morton};
+    /// use nalgebra::Vector3;
+    ///
+    /// let mut tree = PointerOctree::<String, u64>::new();
+    /// let mut i = 0;
+    /// for _ in tree.iter() {
+    ///     i += 1;
+    /// }
+    /// assert!(i == 0);
+    ///
+    /// let m1 = Morton::encode(Vector3::<u64>::new(1, 2, 3));
+    /// let m2 = Morton::encode(Vector3::<u64>::new(4, 5, 6));
+    /// tree.insert(m1, "m1".to_owned());
+    /// tree.insert(m2, "m2".to_owned());
+    ///
+    /// let mut i = 0;
+    /// let mut mortons: Vec<u64> = vec![];
+    /// for (morton, item) in tree.iter() {
+    ///     i += 1;
+    ///     mortons.push(morton);
+    /// }
+    /// assert!(i == 2);
+    /// assert!(mortons.contains(&Morton::encode(Vector3::<u64>::new(1, 2, 3))));
+    /// assert!(mortons.contains(&Morton::encode(Vector3::<u64>::new(4, 5, 6))));
+    /// ```
     pub fn iter(&self) -> impl Iterator<Item = (M, &T)> {
         self.tree.iter()
     }
+
+    // pub fn iter_mut(&mut self) -> impl Iterator<Item = (M, T)> {
+    //     self.tree.iter_mut();
+    // }
 
     /// Iterate over all octree nodes, but stop at `depth` to randomly sample a point.
     ///
@@ -396,6 +459,18 @@ where
     }
 }
 
+impl<T, M> IntoIterator for PointerOctree<T, M>
+where
+    M: Morton,
+{
+    type Item = (M, T);
+    type IntoIter = InternalIntoIter<T, M>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.tree.into_iter()
+    }
+}
+
 impl<T, M> Extend<(M, T)> for PointerOctree<T, M>
 where
     M: Morton,
@@ -407,6 +482,149 @@ where
         for (m, item) in it.into_iter() {
             self.insert(m, item);
         }
+    }
+}
+
+#[allow(dead_code)]
+/// Associates an octree with a LeveledRegion in order to enable resizing.
+impl<T, M, S> ResizingPointerOctree<T, M, S>
+where
+    M: Morton,
+    S: Float + ToPrimitive + FromPrimitive + PartialOrd + std::fmt::Debug + 'static,
+{
+    /// Create an empty resizing octree. Calls Default impl.
+    /// ```n``` represents the parameter of the associated ```LeveledRegion```, while
+    /// ```center``` represents the center of the ```LeveledRegion```.
+    pub fn new(n: i32, center: Vector3<S>) -> Self {
+        Self {
+            octree: PointerOctree::default(),
+            region: CenteredLeveledRegion {
+                leveled_region: LeveledRegion(n),
+                center,
+            },
+        }
+    }
+
+    /// Computes the octant the octree should expand in to add the given point.
+    /// Note: performs only one iteration (does not recursively expand) and
+    /// does not modify the actual ResizingPointerOctree in any way.
+    ///
+    ///
+    /// In other words, the returned value is the octant the OLD coordinates should
+    /// be place in.
+    ///
+    /// ```
+    /// use space::ResizingPointerOctree;
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new(0, Vector3::new(0.0, 0.0, 0.0));
+    /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
+    ///
+    /// let expand_loc = tree.expand_loc(Vector3::new(2f64, 2f64, 2f64));
+    /// // This is outside all the bounds of the current octree, so the
+    /// // point itself dictates the direction of expansion (i.e. 0b00000111)
+    /// // Since the new point will be in octant 0b111, the returned octant will be 0b000.
+    /// assert!(expand_loc == Some(0));
+    /// ```
+    pub fn expand_loc(&self, point: Vector3<S>) -> Option<u8> {
+        self.region.expand_loc(point)
+    }
+
+    /// Resize the octree as many times as needed to accomodate the given point
+    /// (we assume that the octree is centered at 0)
+    ///
+    /// ```
+    /// use space::ResizingPointerOctree;
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new(0, Vector3::new(0.0, 0.0, 0.0));
+    /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
+    /// tree.resize(Vector3::new(1.5f64, 1.5f64, 1.5f64));
+    /// // Since the region initially covered is [-1, 1) cubically,
+    /// // exactly one expansion needed, so that [-2, 2) is covered
+    /// // and (1.5, 1.5, 1.5) may be inserted.
+    ///
+    /// assert!(tree.region.leveled_region.0 == 1);
+    /// ```
+    pub fn resize(&mut self, point: Vector3<S>)
+    where S: std::ops::AddAssign,
+    {
+        if let Some(octant) = self.expand_loc(point) {
+            let old_octree = std::mem::replace(&mut self.octree, PointerOctree::<T, M>::new());
+
+            self.octree
+                .extend(old_octree.into_iter().map(|(morton, item)| {
+                    // Add modified morton to new octree
+                    let octant: M = M::from_u8(octant).unwrap();
+                    let new_morton: M = (morton >> 3) | (octant << (3 * M::dim_bits() - 3));
+                    (new_morton, item)
+                }));
+
+            self.region.expand(octant);
+            self.resize(point);
+        }
+    }
+
+    /// Inserts a vector into the given tree, resizing as many times as necessary.
+    ///
+    /// ```
+    /// use space::ResizingPointerOctree;
+    /// use space::Morton;
+    /// use nalgebra::Vector3;
+    /// let mut tree = ResizingPointerOctree::<String, u64, f64>::new(0, Vector3::new(0.0, 0.0, 0.0));
+    /// tree.insert(Morton::encode(Vector3::new(0, 0, 0)), String::from("test1"));
+    ///
+    /// // This should execute without error, with exactly one expansion needed.
+    /// tree.insert_vector(Vector3::new(1.5f64, 1.5f64, 1.5f64), String::from("test2"));
+    /// assert!(tree.region.leveled_region.0 == 1);
+    ///
+    pub fn insert_vector(&mut self, point: Vector3<S>, item: T)
+    where
+        S: nalgebra::base::Scalar + alga::general::ClosedSub + std::ops::AddAssign,
+    {
+        match self.expand_loc(point) {
+            None => self
+                .octree
+                .insert(self.region.discretize(point).unwrap(), item),
+            Some(_) => {
+                self.resize(point);
+                self.insert_vector(point, item);
+            }
+        }
+    }
+}
+
+impl<T, M, S> Deref for ResizingPointerOctree<T, M, S>
+where
+    M: Morton,
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + PartialOrd
+        + std::fmt::Debug
+        + Sub
+        + 'static,
+{
+    type Target = PointerOctree<T, M>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.octree
+    }
+}
+
+impl<T, M, S> DerefMut for ResizingPointerOctree<T, M, S>
+where
+    M: Morton,
+    S: Float
+        + ToPrimitive
+        + FromPrimitive
+        + PartialOrd
+        + std::fmt::Debug
+        + Sub
+        + 'static,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.octree
     }
 }
 
@@ -627,6 +845,18 @@ impl<T, M> Default for Internal<T, M> {
     }
 }
 
+impl<T, M> IntoIterator for Internal<T, M>
+where
+    M: Morton,
+{
+    type Item = (M, T);
+    type IntoIter = InternalIntoIter<T, M>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        InternalIntoIter::new(self)
+    }
+}
+
 struct InternalIter<'a, T, M> {
     nodes: Vec<(&'a [Internal<T, M>; 8], usize)>,
 }
@@ -655,6 +885,51 @@ where
             match node[ix] {
                 Internal::Node(box Oct { ref children }) => self.nodes.push((children, 0)),
                 Internal::Leaf(ref item, morton) => {
+                    return Some((morton, item));
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+}
+
+pub struct InternalIntoIter<T, M> {
+    nodes: Vec<Internal<T, M>>,
+}
+
+impl<T, M> InternalIntoIter<T, M>
+where
+    M: Morton,
+{
+    fn new(node: Internal<T, M>) -> Self {
+        InternalIntoIter { nodes: vec![node] }
+    }
+}
+
+impl<T, M> Iterator for InternalIntoIter<T, M>
+where
+    M: Morton,
+{
+    type Item = (M, T);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.nodes.pop() {
+            match node {
+                Internal::Node(box Oct {
+                    children: [c0, c1, c2, c3, c4, c5, c6, c7],
+                }) => {
+                    self.nodes.push(c0);
+                    self.nodes.push(c1);
+                    self.nodes.push(c2);
+                    self.nodes.push(c3);
+                    self.nodes.push(c4);
+                    self.nodes.push(c5);
+                    self.nodes.push(c6);
+                    self.nodes.push(c7);
+                }
+                Internal::Leaf(item, morton) => {
                     return Some((morton, item));
                 }
                 _ => {}
