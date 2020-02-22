@@ -1,37 +1,13 @@
 [package]
 name = "space"
-version = "0.7.3"
-description = "A library for working with spatial trees and point clouds"
+version = "0.8.0"
+authors = ["Geordon Worley <vadixidav@gmail.com>"]
+edition = "2018"
+description = "A library providing abstractions for spatial datastructures and search"
 documentation = "https://docs.rs/space/"
 repository = "https://github.com/vadixidav/space"
-keywords = ["space", "pointcloud", "octree", "morton", "spatial"]
+keywords = ["space", "knn", "ann", "search"]
 license = "MIT"
-authors = ["Geordon Worley <vadixidav@gmail.com>"]
 readme = "README.md"
 
-edition = "2018"
-
 [dependencies]
-nalgebra = { version = "0.16.3", default-features = false }
-num-traits = { version = "0.2.6", default-features = false }
-itertools = { version = "0.7.8", default-features = false }
-either = { version = "1.5.0", default-features = false }
-lru-cache = { version = "0.1.1", default-features = false }
-rand = { version = "0.5.5", features = ["std"] }
-smallvec = { version = "0.6.7", default-features = false }
-bitintr = { version = "0.2.0", default-features = false }
-log = { version = "0.4" }
-alga = "0.9.1"
-serde_json = "1.0.39"
-serde = { version = "1.0.91", features = ["derive"] }
-
-[dev-dependencies]
-criterion = { version = "0.2", default-features = false }
-glium = "0.23.0"
-
-[profile.release]
-codegen-units = 1
-
-[[bench]]
-name = "octree"
-harness = false
