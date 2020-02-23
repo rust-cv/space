@@ -2,6 +2,8 @@
 //! common traits that can be shared among spatial data structures.
 
 #![no_std]
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 mod hamming_impls;
 #[cfg(feature = "simd")]
