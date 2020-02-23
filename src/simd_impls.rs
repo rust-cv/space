@@ -16,13 +16,19 @@ macro_rules! simd_impl {
         impl MetricPoint for Hamming<$name> {
             #[inline]
             fn distance(&self, rhs: &Self) -> u32 {
-                // Perform an XOR popcnt. The compiler is smart
-                // enough to optimize this well.
-                (self.0)
-                    .0
-                    .iter()
-                    .zip((rhs.0).0.iter())
-                    .map(|(&a, &b)| (a ^ b).count_ones())
+                // I benchmarked this with many different configurations
+                // and determined that it was fastest this way.
+                // It was tried with u128, u128x1, u128x2, u128x4, u32x16, u16x32,
+                // u64x8, u32x4, and some others. For some reason summing the
+                // popcounts from u128x1 in packed_simd gave the best result.
+                let simd_left_base = self as *const _ as *const packed_simd::u128x1;
+                let simd_right_base = rhs as *const _ as *const packed_simd::u128x1;
+                (0..$bytes / 16)
+                    .map(|i| {
+                        let left = unsafe { *simd_left_base.offset(i) };
+                        let right = unsafe { *simd_right_base.offset(i) };
+                        (left ^ right).count_ones().wrapping_sum() as u32
+                    })
                     .sum()
             }
         }

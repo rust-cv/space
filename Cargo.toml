@@ -11,8 +11,18 @@ categories = ["no-std", "computer-vision", "data-structures"]
 license = "MIT"
 readme = "README.md"
 
+[features]
+simd = ["packed_simd"]
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"], optional = true }
+packed_simd = { version = "0.3.3", optional = true }
 
-[features]
-simd = []
+[dev-dependencies]
+criterion = "0.3.1"
+rand_core = "0.5.1"
+rand_pcg = "0.2.1"
+
+[[bench]]
+name = "knn"
+harness = false
