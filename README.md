@@ -1,6 +1,6 @@
 # space
 
-[![Crates.io][ci]][cl] ![MIT/Apache][li] [![docs.rs][di]][dl] ![LoC][lo]
+[![Discord][dci]][dcl] [![Crates.io][ci]][cl] ![MIT/Apache][li] [![docs.rs][di]][dl] ![LoC][lo]
 
 [ci]: https://img.shields.io/crates/v/space.svg
 [cl]: https://crates.io/crates/space/
@@ -11,6 +11,9 @@
 [dl]: https://docs.rs/space/
 
 [lo]: https://tokei.rs/b1/github/rust-cv/space?category=code
+
+[dci]: https://img.shields.io/discord/550706294311485440.svg?logo=discord&colorB=7289DA
+[dcl]: https://discord.gg/d32jaam
 
 A library providing abstractions for spatial datastructures and search
 
