@@ -1,6 +1,11 @@
 use crate::{Hamming, MetricPoint};
 use core::fmt::{Debug, Error, Formatter};
 use core::hash::{Hash, Hasher};
+#[cfg(feature = "serde")]
+use serde::{
+    de::{self, SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 macro_rules! simd_impl {
     ($name:ident, $bytes:expr) => {
@@ -62,6 +67,65 @@ macro_rules! simd_impl {
         impl From<[u8; $bytes]> for $name {
             fn from(a: [u8; $bytes]) -> Self {
                 Self(a)
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        impl Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let a: [u8; $bytes] = self.clone().into();
+                a.serialize(serializer)
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct SimdVisitor($name, usize);
+
+                impl<'de> Visitor<'de> for SimdVisitor {
+                    type Value = $name;
+
+                    fn expecting(&self, formatter: &mut Formatter) -> Result<(), Error> {
+                        formatter.write_str("a sequence of $bytes bytes")
+                    }
+
+                    fn visit_seq<S>(mut self, mut seq: S) -> Result<$name, S::Error>
+                    where
+                        S: SeqAccess<'de>,
+                    {
+                        // Continuously fill the array with more values.
+                        while let Some(value) = seq.next_element()? {
+                            if self.1 == $bytes {
+                                return Err(de::Error::custom(
+                                    "cannot have more than $bytes bytes in sequence",
+                                ));
+                            }
+                            (self.0).0[self.1] = value;
+                            self.1 += 1;
+                        }
+
+                        if self.1 != $bytes {
+                            Err(de::Error::custom(
+                                "must have exactly $bytes bytes in sequence",
+                            ))
+                        } else {
+                            Ok(self.0)
+                        }
+                    }
+                }
+
+                // Create the visitor and ask the deserializer to drive it. The
+                // deserializer will call visitor.visit_seq() if a seq is present in
+                // the input data.
+                let visitor = SimdVisitor(Self([0; $bytes]), 0);
+                deserializer.deserialize_seq(visitor)
             }
         }
     };

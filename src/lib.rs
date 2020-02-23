@@ -6,6 +6,8 @@
 mod hamming_impls;
 #[cfg(feature = "simd")]
 mod simd_impls;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "simd")]
 pub use simd_impls::*;
 
@@ -54,18 +56,22 @@ pub trait MetricPoint {
 /// Their Influence on Nearest-Neighbor Search") and they can quickly
 /// [grow in dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Hamming<T>(pub T);
 
 /// L1 distance is applied to items wrapped in this type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L1<T>(pub T);
 
 /// L2 distance is applied to items wrapped in this type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2<T>(pub T);
 
 /// L-infinity distance is applied to items wrapped in this type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LInfinity<T>(pub T);
 
 /// Converts a `f32` metric to a `u32` metric with no loss in precision.

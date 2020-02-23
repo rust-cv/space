@@ -11,5 +11,8 @@ categories = ["no-std", "computer-vision", "data-structures"]
 license = "MIT"
 readme = "README.md"
 
+[dependencies]
+serde = { version = "1.0.104", features = ["derive"], optional = true }
+
 [features]
 simd = []
