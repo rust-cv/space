@@ -4,6 +4,10 @@
 #![no_std]
 
 mod hamming_impls;
+#[cfg(feature = "simd")]
+mod simd_impls;
+#[cfg(feature = "simd")]
+pub use simd_impls::*;
 
 /// This trait is implemented by points inside of a metric space.
 ///

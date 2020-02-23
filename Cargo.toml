@@ -10,3 +10,6 @@ keywords = ["space", "knn", "ann", "search"]
 categories = ["no-std", "computer-vision", "data-structures"]
 license = "MIT"
 readme = "README.md"
+
+[features]
+simd = []
