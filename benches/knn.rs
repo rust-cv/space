@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand_core::{RngCore, SeedableRng};
 use rand_pcg::Pcg64;
-use space::{Hamming, MetricPoint, Neighbor, Simd512};
+use space::{Bits512, Hamming, MetricPoint, Neighbor};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = Pcg64::from_seed([1; 32]);
     let mut gen = || {
-        let mut feature = Hamming(Simd512([0; 64]));
+        let mut feature = Hamming(Bits512([0; 64]));
         rng.fill_bytes(&mut (feature.0).0);
         feature
     };
