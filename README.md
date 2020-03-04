@@ -22,3 +22,13 @@ trait implemented on its types natively, please raise an issue on that library
 and they can provide an appropriate implementation for each distance type.
 It should be implemented on `L1<Point>`, `L2<Point>`, etc. This policy does not apply
 if SIMD types are created in the standard library.
+
+## Benchmarks
+
+To run the benchmarks, use the following command:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo bench --features simd
+```
+
+This ensures processor extensions are used. Due to [this issue](https://github.com/rust-lang/cargo/issues/2911) the SIMD feature must be enabled. Cargo offers no way to automatically bring the SIMD feature in for the benchmark, and thus it must be passed at the command line.

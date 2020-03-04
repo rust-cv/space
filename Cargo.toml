@@ -12,6 +12,7 @@ license = "MIT"
 readme = "README.md"
 
 [features]
+# Turns on SIMD impls
 simd = ["packed_simd"]
 # Turns on liballoc, but doesn't itself implement anything
 alloc = []
@@ -30,3 +31,8 @@ rand_pcg = "0.2.1"
 [[bench]]
 name = "knn"
 harness = false
+required-features = ["simd"]
+
+[profile.bench]
+lto = true
+codegen-units = 1

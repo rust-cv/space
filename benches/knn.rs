@@ -3,28 +3,6 @@ use rand_core::{RngCore, SeedableRng};
 use rand_pcg::Pcg64;
 use space::{Hamming, MetricPoint, Simd512};
 
-// (lhs ^ rhs).count_ones().wrapping_sum() as u32
-
-fn knn(
-    feature: &Hamming<Simd512>,
-    k: usize,
-    search_space: &[Hamming<Simd512>],
-    metric: impl Fn(&Hamming<Simd512>, &Hamming<Simd512>) -> u32,
-) -> Vec<(usize, u32)> {
-    let mut v = vec![];
-    for (ix, other) in search_space.iter().enumerate() {
-        let distance = metric(feature, other);
-        let pos = v
-            .binary_search_by_key(&distance, |&(_, distance)| distance)
-            .unwrap_or_else(|e| e);
-        v.insert(pos, (ix, distance));
-        if v.len() > k {
-            v.resize_with(k, || unreachable!());
-        }
-    }
-    v
-}
-
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = Pcg64::from_seed([1; 32]);
     let mut gen = || {
@@ -34,8 +12,21 @@ fn criterion_benchmark(c: &mut Criterion) {
     };
     let search = gen();
     let data = (0..16384).map(|_| gen()).collect::<Vec<_>>();
-    c.bench_function("4 nearest neighbors in 16384", |b| {
-        b.iter(|| knn(&search, 4, &data, |a, b| a.distance(b)))
+    c.bench_function("space: 4-nn in 16384", |b| {
+        let mut s = [(0, 0); 4];
+        b.iter(|| space::linear_knn(&search, &mut s, &data).len())
+    })
+    .bench_function("min_by_key: 1-nn in 16384", |b| {
+        b.iter(|| {
+            data.iter()
+                .map(|f| f.distance(&search))
+                .enumerate()
+                .min_by_key(|&(_, d)| d)
+        })
+    })
+    .bench_function("space: 1-nn in 16384", |b| {
+        let mut s = [(0, 0); 1];
+        b.iter(|| space::linear_knn(&search, &mut s, &data).len())
     });
 }
 

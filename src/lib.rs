@@ -86,6 +86,40 @@ pub fn f64_metric(n: f64) -> u32 {
     (n.to_bits() >> 32) as u32
 }
 
+/// Performs a linear knn search by iterating over everything in the space
+/// and performing a binary search on running set of neighbors.
+///
+/// * `search` is the feature we are searching nearest neighbors for.
+/// * `neighbors` is where the nearest neighbors are placed nearest to furthest.
+/// * `space` is all of the points we are searching.
+///
+/// Returns a slice of the nearest neighbors from nearest to furthest.
+pub fn linear_knn<'a, 'b, T: 'b>(
+    search: &T,
+    neighbors: &'a mut [(usize, u32)],
+    space: impl IntoIterator<Item = &'b T>,
+) -> &'a mut [(usize, u32)]
+where
+    T: MetricPoint,
+{
+    let mut n = 0;
+    let max = neighbors.len();
+    for (ix, other) in space.into_iter().enumerate() {
+        let distance = search.distance(other);
+        let pos = neighbors[0..n]
+            .binary_search_by_key(&distance, |&(_, other_distance)| other_distance)
+            .unwrap_or_else(|e| e);
+        if n != max {
+            n += 1;
+        }
+        if pos < max {
+            neighbors[pos..n].rotate_right(1);
+            neighbors[pos] = (ix, distance);
+        }
+    }
+    &mut neighbors[0..n]
+}
+
 /// This can be used to return an iterable set of indices over a search index
 /// by wrapping any type that implements `AsRef<[usize]>`.
 ///
