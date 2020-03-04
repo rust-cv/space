@@ -52,9 +52,18 @@ impl CandidatesVec {
         will_add
     }
 
-    /// Pop the worst item from the candidate list.
+    /// Pop the worst candidate list.
+    ///
+    /// This removes it from the candidates.
     pub fn pop(&mut self) -> Option<Neighbor> {
         self.candidates.pop()
+    }
+
+    /// Peek at the best candidate.
+    ///
+    /// This does not remove the candidate.
+    pub fn best(&self) -> Option<Neighbor> {
+        self.candidates.first().copied()
     }
 
     /// Sets the cap to `cap`. Resizes if necessary, removing the bottom elements.
