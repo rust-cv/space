@@ -83,6 +83,11 @@ impl CandidatesVec {
         }
         &mut slice[0..total_fill]
     }
+
+    /// Iterator from best to worst.
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Neighbor> + 'a {
+        self.candidates.iter().copied()
+    }
 }
 
 #[cfg(test)]
