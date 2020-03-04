@@ -107,6 +107,13 @@ fn test_candidates() {
         let distance = distance.to_bits();
         candidates.push(Neighbor { index, distance });
     }
+    assert_eq!(
+        candidates.best(),
+        Some(Neighbor {
+            index: 4,
+            distance: 786_163_455,
+        }),
+    );
     let mut arr = [Neighbor::invalid(); 3];
     candidates.fill_slice(&mut arr);
     arr[0..2].sort_unstable();
