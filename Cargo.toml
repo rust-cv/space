@@ -13,7 +13,9 @@ readme = "README.md"
 
 [features]
 # Turns on SIMD impls
-simd = ["packed_simd"]
+simd = ["simd-hamming"]
+# Turns on Hamming SIMD impls
+simd-hamming = ["packed_simd"]
 # Turns on liballoc, but doesn't itself implement anything
 alloc = []
 # Implements hamming distance for Vec
@@ -31,7 +33,7 @@ rand_pcg = "0.2.1"
 [[bench]]
 name = "knn"
 harness = false
-required-features = ["simd"]
+required-features = ["simd-hamming"]
 
 [profile.bench]
 lto = true

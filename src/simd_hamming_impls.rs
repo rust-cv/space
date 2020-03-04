@@ -137,9 +137,9 @@ macro_rules! simd_impl {
     };
 }
 
-simd_impl!(Simd128, 16);
-simd_impl!(Simd256, 32);
-simd_impl!(Simd512, 64);
-simd_impl!(Simd1024, 128);
-simd_impl!(Simd2048, 256);
-simd_impl!(Simd4096, 512);
+simd_impl!(Bits128, 16);
+simd_impl!(Bits256, 32);
+simd_impl!(Bits512, 64);
+simd_impl!(Bits1024, 128);
+simd_impl!(Bits2048, 256);
+simd_impl!(Bits4096, 512);
