@@ -6,12 +6,19 @@
 extern crate alloc;
 
 mod hamming_impls;
+
 #[cfg(feature = "simd-hamming")]
 mod simd_hamming_impls;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "simd-hamming")]
 pub use simd_hamming_impls::*;
+
+#[cfg(feature = "candidates-vec")]
+mod candidates_vec;
+#[cfg(feature = "candidates-vec")]
+pub use candidates_vec::*;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// This trait is implemented by points inside of a metric space.
 ///

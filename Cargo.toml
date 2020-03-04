@@ -20,6 +20,8 @@ simd-hamming = ["packed_simd"]
 alloc = []
 # Implements hamming distance for Vec
 hamming-vec = ["alloc"]
+# Includes heap-allocated vector priority queues
+candidates-vec = ["alloc"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"], optional = true }
