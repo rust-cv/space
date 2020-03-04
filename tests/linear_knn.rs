@@ -11,6 +11,10 @@ fn test_linear_knn() {
     ];
 
     let mut neighbors = [Neighbor::invalid(); 3];
+    assert_eq!(
+        linear_knn(&Hamming(0b0101_0000), &mut neighbors, &data).len(),
+        3
+    );
 
     assert_eq!(
         &neighbors[..],
