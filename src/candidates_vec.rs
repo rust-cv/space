@@ -7,37 +7,10 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CandidatesVec {
     candidates: Vec<Neighbor>,
-}
-
-impl CandidatesVec {
-    /// Clears the struct without freeing the memory.
-    pub fn clear(&mut self) {
-        self.candidates.clear();
-    }
-
-    /// Pushes a new neighbor to the candidate list.
-    pub fn push(&mut self, n: Neighbor) {
-        let pos = self
-            .candidates
-            .binary_search_by_key(&n.distance, |&other| other.distance)
-            .unwrap_or_else(|e| e);
-        self.candidates.insert(pos, n);
-    }
-
-    /// Pop an item from the candidate list.
-    pub fn pop(&mut self) -> Option<Neighbor> {
-        self.candidates.pop()
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct FixedCandidatesVec {
-    candidates: Vec<Neighbor>,
     cap: usize,
 }
 
-impl FixedCandidatesVec {
+impl CandidatesVec {
     /// Clears the struct without freeing the memory.
     pub fn clear(&mut self) {
         self.candidates.clear();
@@ -106,7 +79,7 @@ impl FixedCandidatesVec {
 #[cfg(test)]
 #[test]
 fn test_candidates() {
-    let mut candidates = FixedCandidatesVec::default();
+    let mut candidates = CandidatesVec::default();
     candidates.set_cap(3);
 
     let distances = [
