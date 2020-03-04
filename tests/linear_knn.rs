@@ -1,4 +1,4 @@
-use space::{linear_knn, Hamming};
+use space::{linear_knn, Hamming, Neighbor};
 
 #[test]
 fn test_linear_knn() {
@@ -10,11 +10,23 @@ fn test_linear_knn() {
         Hamming(0b0000_1111),
     ];
 
-    let mut neighbors = [(0, 0); 3];
-    assert_eq!(
-        linear_knn(&Hamming(0b0101_0000), &mut neighbors, &data).len(),
-        3
-    );
+    let mut neighbors = [Neighbor::invalid(); 3];
 
-    assert_eq!(&neighbors[..], &[(3, 2), (2, 2), (4, 6)]);
+    assert_eq!(
+        &neighbors[..],
+        &[
+            Neighbor {
+                index: 3,
+                distance: 2,
+            },
+            Neighbor {
+                index: 2,
+                distance: 2,
+            },
+            Neighbor {
+                index: 4,
+                distance: 6,
+            },
+        ]
+    );
 }

@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand_core::{RngCore, SeedableRng};
 use rand_pcg::Pcg64;
-use space::{Hamming, MetricPoint, Simd512};
+use space::{Hamming, MetricPoint, Neighbor, Simd512};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = Pcg64::from_seed([1; 32]);
@@ -13,7 +13,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let search = gen();
     let data = (0..16384).map(|_| gen()).collect::<Vec<_>>();
     c.bench_function("space: 4-nn in 16384", |b| {
-        let mut s = [(0, 0); 4];
+        let mut s = [Neighbor::invalid(); 4];
         b.iter(|| space::linear_knn(&search, &mut s, &data).len())
     })
     .bench_function("min_by_key: 1-nn in 16384", |b| {
@@ -25,7 +25,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
     })
     .bench_function("space: 1-nn in 16384", |b| {
-        let mut s = [(0, 0); 1];
+        let mut s = [Neighbor::invalid(); 1];
         b.iter(|| space::linear_knn(&search, &mut s, &data).len())
     });
 }

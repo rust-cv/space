@@ -86,6 +86,30 @@ pub fn f64_metric(n: f64) -> u32 {
     (n.to_bits() >> 32) as u32
 }
 
+/// For k-NN algorithms to return neighbors.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Neighbor {
+    /// Index of the neighbor in the search space.
+    pub index: usize,
+    /// The distance of the neighbor from the search feature.
+    pub distance: u32,
+}
+
+impl Neighbor {
+    /// Generates an invalid (on purpose) neighbor to initialize an array.
+    ///
+    /// Generated neighbor has maximum index and distance. This is to ensure that
+    /// software does not silently fail as an out-of-bounds will occur if an invalid
+    /// neighbor is used.
+    pub fn invalid() -> Self {
+        Self {
+            index: !0,
+            distance: !0,
+        }
+    }
+}
+
 /// Performs a linear knn search by iterating over everything in the space
 /// and performing a binary search on running set of neighbors.
 ///
@@ -96,25 +120,25 @@ pub fn f64_metric(n: f64) -> u32 {
 /// Returns a slice of the nearest neighbors from nearest to furthest.
 pub fn linear_knn<'a, 'b, T: 'b>(
     search: &T,
-    neighbors: &'a mut [(usize, u32)],
+    neighbors: &'a mut [Neighbor],
     space: impl IntoIterator<Item = &'b T>,
-) -> &'a mut [(usize, u32)]
+) -> &'a mut [Neighbor]
 where
     T: MetricPoint,
 {
     let mut n = 0;
     let max = neighbors.len();
-    for (ix, other) in space.into_iter().enumerate() {
+    for (index, other) in space.into_iter().enumerate() {
         let distance = search.distance(other);
         let pos = neighbors[0..n]
-            .binary_search_by_key(&distance, |&(_, other_distance)| other_distance)
+            .binary_search_by_key(&distance, |&other| other.distance)
             .unwrap_or_else(|e| e);
         if n != max {
             n += 1;
         }
         if pos < max {
             neighbors[pos..n].rotate_right(1);
-            neighbors[pos] = (ix, distance);
+            neighbors[pos] = Neighbor { index, distance };
         }
     }
     &mut neighbors[0..n]
