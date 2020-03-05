@@ -40,3 +40,6 @@ required-features = ["simd-hamming"]
 [profile.bench]
 lto = true
 codegen-units = 1
+
+[package.metadata.docs.rs]
+all-features = true
