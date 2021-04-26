@@ -15,7 +15,7 @@ readme = "README.md"
 # Turns on SIMD impls
 simd = ["simd-hamming"]
 # Turns on Hamming SIMD impls
-simd-hamming = ["packed_simd"]
+simd-hamming = ["packed_simd_2"]
 # Turns on liballoc, but doesn't itself implement anything
 alloc = []
 # Implements hamming distance for Vec
@@ -25,7 +25,7 @@ candidates-vec = ["alloc"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"], optional = true }
-packed_simd = { version = "0.3.3", optional = true }
+packed_simd_2 = { version = "0.3.4", default-features = false, optional = true }
 
 [dev-dependencies]
 criterion = "0.3.1"

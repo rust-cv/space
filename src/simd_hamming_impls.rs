@@ -20,9 +20,9 @@ macro_rules! simd_impl {
                 // and determined that it was fastest this way.
                 // It was tried with u128, u128x1, u128x2, u128x4, u32x16, u16x32,
                 // u64x8, u32x4, and some others. For some reason summing the
-                // popcounts from u128x1 in packed_simd gave the best result.
-                let simd_left_base = self as *const _ as *const packed_simd::u128x1;
-                let simd_right_base = rhs as *const _ as *const packed_simd::u128x1;
+                // popcounts from u128x1 in packed_simd_2 gave the best result.
+                let simd_left_base = self as *const _ as *const packed_simd_2::u128x1;
+                let simd_right_base = rhs as *const _ as *const packed_simd_2::u128x1;
                 (0..$bytes / 16)
                     .map(|i| {
                         let left = unsafe { *simd_left_base.offset(i) };
@@ -64,9 +64,9 @@ macro_rules! simd_impl {
             }
         }
 
-        impl Into<[u8; $bytes]> for $name {
-            fn into(self) -> [u8; $bytes] {
-                self.0
+        impl From<$name> for [u8; $bytes] {
+            fn from(a: $name) -> [u8; $bytes] {
+                a.0
             }
         }
 

@@ -85,7 +85,7 @@ impl CandidatesVec {
     }
 
     /// Iterator from best to worst.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Neighbor> + 'a {
+    pub fn iter(&self) -> impl Iterator<Item = Neighbor> + '_ {
         self.candidates.iter().copied()
     }
 }
