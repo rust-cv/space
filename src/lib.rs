@@ -29,26 +29,23 @@ use serde::{Deserialize, Serialize};
 /// from A to B directly. All implementors must also take care to avoid
 /// negative numbers, as valid distances are only positive numbers.
 ///
-/// In practice, the `u32` distance returned by this trait should only be used
+/// In practice, the `u64` distance returned by this trait should only be used
 /// to compare distances between points in a metric space. If the distances are added,
 /// one would need to take care of overflow. Regardless of the underlying representation
-/// (float or integer), one can map the metric distance into the set of 32-bit integers.
-/// This may cause some loss of precision, but the choice to use 32 bits of precision
+/// (float or integer), one can map the metric distance into the set of 64-bit integers.
+/// This may cause some loss of precision, but the choice to use 64 bits of precision
 /// is one that is done with practicality in mind. Specifically, there may be cases
 /// where only a few bits of precision are needed (hamming distance), but there may also
-/// be cases where a 32-bit floating point number may be different by only one bit of precision.
-/// It is trivial to map a 32-bit float to the unsigned integers for comparison, as
+/// be cases where a 64-bit floating point number may be different by only one bit of precision.
+/// It is trivial to map a 64-bit float to the unsigned integers for comparison, as
 /// [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754) is designed such that a direct
-/// bit-to-bit translation of a 32-bit float to a 32-bit signed integer will compare
-/// as intended using a standard signed integer comparation operation. 64-bit floating point
-/// numbers must be truncated to their upper 32-bits and loose some precision. This loss
-/// is acceptable in most scenarios. 32-bit integers are widely supported on embedded and
-/// desktop processors as native registers.
+/// bit-to-bit translation of a 64-bit float to a 64-bit signed integer will compare
+/// as intended using a standard signed integer comparation operation. Anything with more
+/// than 64 bits of precision will need to be truncated.
 ///
-/// If you have a floating distance, use [`f32_metric`] or [`f64_metric`]. Keep in mind
-/// that [`f64_metric`] will cause precision loss of 32 bits.
+/// If you have a floating distance, use [`f32_metric`] or [`f64_metric`].
 pub trait MetricPoint {
-    fn distance(&self, rhs: &Self) -> u32;
+    fn distance(&self, rhs: &Self) -> u64;
 }
 
 /// Any data contained in this struct is treated such that all of the bits
@@ -84,13 +81,21 @@ pub struct L2<T>(pub T);
 pub struct LInfinity<T>(pub T);
 
 /// Converts a `f32` metric to a `u32` metric with no loss in precision.
-pub fn f32_metric(n: f32) -> u32 {
-    n.to_bits()
+pub fn f32_metric(n: f32) -> u64 {
+    n.to_bits() as u64
 }
 
 /// Converts a `f64` metric into a `u32` metric by truncating 32-bits of precision.
-pub fn f64_metric(n: f64) -> u32 {
-    (n.to_bits() >> 32) as u32
+///
+/// ```
+/// use space::f64_metric;
+/// assert!(f64_metric(0.5) < f64_metric(1.0));
+/// assert!(f64_metric(0.100001) < f64_metric(0.100002));
+/// assert!(f64_metric(0.0) < f64_metric(0.78));
+/// assert!(f64_metric(0.9) > f64_metric(0.78));
+/// ```
+pub fn f64_metric(n: f64) -> u64 {
+    (n.to_bits() >> 32) as u64
 }
 
 /// For k-NN algorithms to return neighbors.
@@ -100,7 +105,7 @@ pub struct Neighbor {
     /// Index of the neighbor in the search space.
     pub index: usize,
     /// The distance of the neighbor from the search feature.
-    pub distance: u32,
+    pub distance: u64,
 }
 
 impl Neighbor {

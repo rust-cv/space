@@ -3,10 +3,10 @@ use crate::{Hamming, MetricPoint};
 macro_rules! hamming_impl {
     ($x:ty) => {
         impl MetricPoint for Hamming<$x> {
-            fn distance(&self, rhs: &Self) -> u32 {
+            fn distance(&self, rhs: &Self) -> u64 {
                 let Hamming(a) = *self;
                 let Hamming(b) = *rhs;
-                (a ^ b).count_ones()
+                (a ^ b).count_ones() as u64
             }
         }
     };
@@ -25,10 +25,13 @@ mod vec_impls {
     macro_rules! hamming_vec_impl {
         ($x:ty) => {
             impl MetricPoint for Hamming<Vec<$x>> {
-                fn distance(&self, rhs: &Self) -> u32 {
+                fn distance(&self, rhs: &Self) -> u64 {
                     let Hamming(a) = self;
                     let Hamming(b) = rhs;
-                    a.iter().zip(b).map(|(&a, &b)| (a ^ b).count_ones()).sum()
+                    a.iter()
+                        .zip(b)
+                        .map(|(&a, &b)| (a ^ b).count_ones() as u64)
+                        .sum()
                 }
             }
         };

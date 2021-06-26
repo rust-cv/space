@@ -109,7 +109,7 @@ fn test_candidates() {
         0.000_000_01f32,
     ];
     for (index, &distance) in distances.iter().enumerate() {
-        let distance = distance.to_bits();
+        let distance = crate::f32_metric(distance);
         candidates.push(Neighbor { index, distance });
     }
     assert_eq!(

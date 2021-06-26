@@ -15,7 +15,7 @@ macro_rules! simd_impl {
 
         impl MetricPoint for Hamming<$name> {
             #[inline]
-            fn distance(&self, rhs: &Self) -> u32 {
+            fn distance(&self, rhs: &Self) -> u64 {
                 // I benchmarked this with many different configurations
                 // and determined that it was fastest this way.
                 // It was tried with u128, u128x1, u128x2, u128x4, u32x16, u16x32,
@@ -27,7 +27,7 @@ macro_rules! simd_impl {
                     .map(|i| {
                         let left = unsafe { *simd_left_base.offset(i) };
                         let right = unsafe { *simd_right_base.offset(i) };
-                        (left ^ right).count_ones().wrapping_sum() as u32
+                        (left ^ right).count_ones().wrapping_sum() as u64
                     })
                     .sum()
             }
