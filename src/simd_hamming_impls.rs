@@ -1,6 +1,9 @@
 use crate::{Hamming, MetricPoint};
-use core::fmt::{Debug, Error, Formatter};
-use core::hash::{Hash, Hasher};
+use core::{
+    cmp::Ordering,
+    fmt::{Debug, Error, Formatter},
+    hash::{Hash, Hasher},
+};
 #[cfg(feature = "serde")]
 use serde::{
     de::{self, SeqAccess, Visitor},
@@ -35,13 +38,13 @@ macro_rules! simd_impl {
 
         impl Debug for $name {
             fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-                Debug::fmt(&self.0[..], f)
+                self.0.fmt(f)
             }
         }
 
         impl PartialEq for $name {
             fn eq(&self, other: &Self) -> bool {
-                self.0[..] == other.0[..]
+                self.0 == other.0
             }
         }
 
@@ -54,13 +57,40 @@ macro_rules! simd_impl {
             {
                 self.0.hash(state)
             }
-            fn hash_slice<H>(data: &[Self], state: &mut H)
-            where
-                H: Hasher,
-            {
-                for s in data {
-                    s.hash(state);
-                }
+        }
+
+        impl PartialOrd for $name {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                self.0.partial_cmp(&other.0)
+            }
+
+            fn lt(&self, other: &Self) -> bool {
+                self.0.lt(&other.0)
+            }
+            fn le(&self, other: &Self) -> bool {
+                self.0.le(&other.0)
+            }
+            fn gt(&self, other: &Self) -> bool {
+                self.0.gt(&other.0)
+            }
+            fn ge(&self, other: &Self) -> bool {
+                self.0.ge(&other.0)
+            }
+        }
+
+        impl Ord for $name {
+            fn cmp(&self, other: &Self) -> Ordering {
+                self.0[..].cmp(&other.0[..])
+            }
+
+            fn max(self, other: Self) -> Self {
+                Self(self.0.max(other.0))
+            }
+            fn min(self, other: Self) -> Self {
+                Self(self.0.min(other.0))
+            }
+            fn clamp(self, min: Self, max: Self) -> Self {
+                Self(self.0.clamp(min.0, max.0))
             }
         }
 

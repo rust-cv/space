@@ -61,22 +61,22 @@ pub trait MetricPoint {
 /// amount of equidistant points is high (see "Thick Boundaries in Binary Space and
 /// Their Influence on Nearest-Neighbor Search") and they can quickly
 /// [grow in dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Hamming<T>(pub T);
 
 /// L1 distance is applied to items wrapped in this type.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L1<T>(pub T);
 
 /// L2 distance is applied to items wrapped in this type.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2<T>(pub T);
 
 /// L-infinity distance is applied to items wrapped in this type.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LInfinity<T>(pub T);
 
