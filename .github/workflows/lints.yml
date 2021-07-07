@@ -3,8 +3,8 @@ on: [push, pull_request]
 name: lints
 
 jobs:
-  combo:
-    name: Clippy + rustfmt
+  rustfmt:
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -16,16 +16,37 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: rustfmt, clippy
+          components: rustfmt
 
       - name: Run cargo fmt
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - --all-features
+          - --no-default-features --features alloc
+          - --no-default-features --features simd
+          - --no-default-features --features simd-hamming
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: clippy
 
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: ${{ matrix.features }} -- -D warnings

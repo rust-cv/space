@@ -15,7 +15,7 @@
 [dci]: https://img.shields.io/discord/550706294311485440.svg?logo=discord&colorB=7289DA
 [dcl]: https://discord.gg/d32jaam
 
-[btl]: https://github.com/rust-cv/space/workflows/unit%20tests/badge.svg
+[btl]: https://github.com/rust-cv/space/workflows/test/badge.svg
 [bll]: https://github.com/rust-cv/space/workflows/lints/badge.svg
 [bnl]: https://github.com/rust-cv/space/workflows/no-std/badge.svg
 

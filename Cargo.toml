@@ -12,20 +12,18 @@ license = "MIT"
 readme = "README.md"
 
 [features]
+default = ["alloc"]
 # Turns on SIMD impls
 simd = ["simd-hamming"]
 # Turns on Hamming SIMD impls
 simd-hamming = ["packed_simd_2"]
 # Turns on liballoc, but doesn't itself implement anything
 alloc = []
-# Implements hamming distance for Vec
-hamming-vec = ["alloc"]
-# Includes heap-allocated vector priority queues
-candidates-vec = ["alloc"]
 
 [dependencies]
 serde = { version = "1.0.125", features = ["derive"], optional = true }
 packed_simd_2 = { version = "0.3.4", default-features = false, optional = true }
+num-traits = { version = "0.2.14", default-features = false }
 
 [dev-dependencies]
 criterion = "0.3.4"
@@ -35,7 +33,11 @@ rand_pcg = "0.3.0"
 [[bench]]
 name = "knn"
 harness = false
-required-features = ["simd-hamming"]
+required-features = ["simd-hamming", "alloc"]
+
+[[test]]
+name = "linear_knn"
+required-features = ["alloc"]
 
 [profile.bench]
 lto = true

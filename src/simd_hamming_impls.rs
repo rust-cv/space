@@ -1,8 +1,9 @@
-use crate::{Hamming, MetricPoint};
+use crate::MetricPoint;
 use core::{
     cmp::Ordering,
     fmt::{Debug, Error, Formatter},
     hash::{Hash, Hasher},
+    ops::{Deref, DerefMut},
 };
 #[cfg(feature = "serde")]
 use serde::{
@@ -11,28 +12,44 @@ use serde::{
 };
 
 macro_rules! simd_impl {
-    ($name:ident, $bytes:expr) => {
+    ($name:ident, $bytes:expr, $metric:ty) => {
         #[repr(align($bytes))]
         #[derive(Copy, Clone)]
         pub struct $name(pub [u8; $bytes]);
 
-        impl MetricPoint for Hamming<$name> {
+        impl MetricPoint for $name {
+            type Metric = $metric;
+
             #[inline]
-            fn distance(&self, rhs: &Self) -> u64 {
+            fn distance(&self, other: &Self) -> Self::Metric {
                 // I benchmarked this with many different configurations
                 // and determined that it was fastest this way.
                 // It was tried with u128, u128x1, u128x2, u128x4, u32x16, u16x32,
                 // u64x8, u32x4, and some others. For some reason summing the
                 // popcounts from u128x1 in packed_simd_2 gave the best result.
                 let simd_left_base = self as *const _ as *const packed_simd_2::u128x1;
-                let simd_right_base = rhs as *const _ as *const packed_simd_2::u128x1;
+                let simd_right_base = other as *const _ as *const packed_simd_2::u128x1;
                 (0..$bytes / 16)
                     .map(|i| {
                         let left = unsafe { *simd_left_base.offset(i) };
                         let right = unsafe { *simd_right_base.offset(i) };
-                        (left ^ right).count_ones().wrapping_sum() as u64
+                        (left ^ right).count_ones().wrapping_sum() as $metric
                     })
                     .sum()
+            }
+        }
+
+        impl Deref for $name {
+            type Target = [u8; $bytes];
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl DerefMut for $name {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
             }
         }
 
@@ -167,9 +184,9 @@ macro_rules! simd_impl {
     };
 }
 
-simd_impl!(Bits128, 16);
-simd_impl!(Bits256, 32);
-simd_impl!(Bits512, 64);
-simd_impl!(Bits1024, 128);
-simd_impl!(Bits2048, 256);
-simd_impl!(Bits4096, 512);
+simd_impl!(Bits128, 16, u8);
+simd_impl!(Bits256, 32, u16);
+simd_impl!(Bits512, 64, u16);
+simd_impl!(Bits1024, 128, u16);
+simd_impl!(Bits2048, 256, u16);
+simd_impl!(Bits4096, 512, u16);
