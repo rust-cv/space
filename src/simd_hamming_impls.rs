@@ -17,6 +17,8 @@ macro_rules! simd_impl {
         #[derive(Copy, Clone)]
         pub struct $name(pub [u8; $bytes]);
 
+        /// This implementation computes the distance in [hamming space](https://en.wikipedia.org/wiki/Hamming_space)
+        /// using each bit as its own separate dimension.
         impl MetricPoint for $name {
             type Metric = $metric;
 

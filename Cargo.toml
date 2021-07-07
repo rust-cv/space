@@ -24,6 +24,7 @@ alloc = []
 serde = { version = "1.0.125", features = ["derive"], optional = true }
 packed_simd_2 = { version = "0.3.4", default-features = false, optional = true }
 num-traits = { version = "0.2.14", default-features = false }
+doc-comment = "0.3.3"
 
 [dev-dependencies]
 criterion = "0.3.4"

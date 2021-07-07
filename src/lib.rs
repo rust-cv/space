@@ -1,7 +1,7 @@
-//! This library is intended to be incredibly lightweight (cost nothing), but provide
-//! common traits that can be shared among spatial data structures.
+//! See the [Crates.io page](https://crates.io/crates/space) for the README.
 
 #![no_std]
+doc_comment::doctest!("../README.md");
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
