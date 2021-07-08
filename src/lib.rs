@@ -93,11 +93,40 @@ where
 /// Performs a linear knn search by iterating over everything in the space
 /// and performing a binary search on running set of neighbors.
 ///
-/// * `search` is the feature we are searching nearest neighbors for.
-/// * `neighbors` is where the nearest neighbors are placed nearest to furthest.
-/// * `space` is all of the points we are searching.
+/// ## Example
 ///
-/// Returns a slice of the nearest neighbors from nearest to furthest.
+/// ```
+/// use space::{Knn, LinearKnn, MetricPoint, Neighbor};
+///
+/// #[derive(PartialEq)]
+/// struct Hamming(u8);
+///
+/// impl MetricPoint for Hamming {
+///     type Metric = u8;
+///
+///     fn distance(&self, other: &Self) -> Self::Metric {
+///         (self.0 ^ other.0).count_ones() as u8
+///     }
+/// }
+///
+/// let data = [
+///     Hamming(0b1010_1010),
+///     Hamming(0b1111_1111),
+///     Hamming(0b0000_0000),
+///     Hamming(0b1111_0000),
+///     Hamming(0b0000_1111),
+/// ];
+///
+/// let search = LinearKnn(data.iter());
+/// assert_eq!(
+///     &search.knn(&Hamming(0b0101_0000), 3),
+///     &[
+///         Neighbor { index: 2, distance: 2 },
+///         Neighbor { index: 3, distance: 2 },
+///         Neighbor { index: 0, distance: 6 },
+///     ]
+/// );
+/// ```
 #[cfg(feature = "alloc")]
 pub struct LinearKnn<I>(pub I);
 
