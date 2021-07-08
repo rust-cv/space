@@ -1,6 +1,6 @@
 [package]
 name = "space"
-version = "0.13.1"
+version = "0.13.2-alpha.0"
 authors = ["Geordon Worley <vadixidav@gmail.com>"]
 edition = "2018"
 description = "A library providing abstractions for spatial datastructures and search"
