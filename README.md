@@ -26,6 +26,10 @@ trait implemented on its types natively, please raise an issue on that library.
 Similarly, crates which define datapoints with specific distance metrics, and
 not general linear algebra crates, can implement the `MetricPoint` trait.
 
+See the [bitarray](https://crates.io/crates/bitarray) crate for an implementation
+of `MetricPoint` using hamming distance (with optional, though unstable, 512-bit
+SIMD support, and always-on 64-bit popcnt instruction support).
+
 ## Usage
 
 ```rust
