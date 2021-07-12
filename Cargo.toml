@@ -13,16 +13,11 @@ readme = "README.md"
 
 [features]
 default = ["alloc"]
-# Turns on SIMD impls
-simd = ["simd-hamming"]
-# Turns on Hamming SIMD impls
-simd-hamming = ["packed_simd_2"]
-# Turns on liballoc, but doesn't itself implement anything
+# Enables the usage of LinearKnn, which requires Vec.
 alloc = []
 
 [dependencies]
 serde = { version = "1.0.125", features = ["derive"], optional = true }
-packed_simd_2 = { version = "0.3.4", default-features = false, optional = true }
 num-traits = { version = "0.2.14", default-features = false }
 doc-comment = "0.3.3"
 

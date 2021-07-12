@@ -31,8 +31,6 @@ jobs:
         features:
           - --all-features
           - --no-default-features --features alloc
-          - --no-default-features --features simd
-          - --no-default-features --features simd-hamming
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2

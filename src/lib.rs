@@ -6,11 +6,6 @@ doc_comment::doctest!("../README.md");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "simd-hamming")]
-mod simd_hamming_impls;
-#[cfg(feature = "simd-hamming")]
-pub use simd_hamming_impls::*;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
