@@ -56,19 +56,20 @@ pub trait MetricPoint {
 /// For k-NN algorithms to return neighbors.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Neighbor<Metric> {
+pub struct Neighbor<Metric, Ix = usize> {
     /// Index of the neighbor in the search space.
-    pub index: usize,
+    pub index: Ix,
     /// The distance of the neighbor from the search feature.
     pub distance: Metric,
 }
 
 /// Implement this trait on data structures (or wrappers) which perform KNN searches.
-pub trait Knn<P>
+pub trait Knn<P, Ix = usize>
 where
     P: MetricPoint,
+    Ix: Copy,
 {
-    type KnnIter: IntoIterator<Item = Neighbor<P::Metric>>;
+    type KnnIter: IntoIterator<Item = Neighbor<P::Metric, Ix>>;
 
     /// Get `num` nearest neighbors of `target`.
     ///
@@ -80,8 +81,106 @@ where
     ///
     /// For many KNN search algorithms, the returned neighbors are approximate, and may not
     /// be the actual nearest neighbors.
-    fn nn(&self, query: &P) -> Option<Neighbor<P::Metric>> {
+    fn nn(&self, query: &P) -> Option<Neighbor<P::Metric, Ix>> {
         self.knn(query, 1).into_iter().next()
+    }
+}
+
+/// This trait gives knn search collections the ability to give the nearest neighbor keys back.
+///
+/// This is not the final API. Eventually, the iterator type will be chosen by the collection,
+/// but for now it is a [`Vec`] until Rust stabilizes GATs.
+pub trait KnnPoints<P, Ix = usize>: Knn<P, Ix>
+where
+    P: MetricPoint,
+    Ix: Copy,
+{
+    /// Get a point using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
+    ///
+    /// This should only be used directly after one of the mentioned methods are called to retrieve
+    /// a point associated with a neighbor, and will panic if the index is incorrect due to
+    /// mutating the data structure thereafter. The index is only valid up until the next mutation.
+    fn get_point(&self, index: Ix) -> &'_ P;
+
+    /// Get `num` nearest neighbor points of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    fn knn_points(&self, query: &P, num: usize) -> Vec<(Neighbor<P::Metric, Ix>, &'_ P)> {
+        self.knn(query, num)
+            .into_iter()
+            .map(|n| (n, self.get_point(n.index)))
+            .collect()
+    }
+
+    /// Get the nearest neighbor point of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    fn nn_point(&self, query: &P) -> Option<(Neighbor<P::Metric, Ix>, &'_ P)> {
+        self.nn(query).map(|n| (n, self.get_point(n.index)))
+    }
+}
+
+/// This trait gives knn search collections the ability to give the nearest neighbor values back.
+///
+/// This is not the final API. Eventually, the iterator type will be chosen by the collection,
+/// but for now it is a [`Vec`] until Rust stabilizes GATs.
+pub trait KnnMap<K, V, Ix = usize>: KnnPoints<K, Ix>
+where
+    K: MetricPoint,
+    Ix: Copy,
+{
+    /// Get a value using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
+    ///
+    /// This should only be used directly after one of the mentioned methods are called to retrieve
+    /// a value associated with a neighbor, and will panic if the index is incorrect due to
+    /// mutating the data structure thereafter. The index is only valid up until the next mutation.
+    fn get_value(&self, index: Ix) -> &'_ V;
+
+    /// Get `num` nearest neighbor keys of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    fn knn_values(&self, query: &K, num: usize) -> Vec<(Neighbor<K::Metric, Ix>, &'_ V)> {
+        self.knn(query, num)
+            .into_iter()
+            .map(|n| (n, self.get_value(n.index)))
+            .collect()
+    }
+
+    /// Get the nearest neighbor key of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    fn nn_value(&self, query: &K) -> Option<(Neighbor<K::Metric, Ix>, &'_ V)> {
+        self.nn(query).map(|n| (n, self.get_value(n.index)))
+    }
+
+    /// Get `num` nearest neighbor keys of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    #[allow(clippy::type_complexity)]
+    fn knn_keys_values(
+        &self,
+        query: &K,
+        num: usize,
+    ) -> Vec<(Neighbor<K::Metric, Ix>, &'_ K, &'_ V)> {
+        self.knn(query, num)
+            .into_iter()
+            .map(|n| (n, self.get_point(n.index), self.get_value(n.index)))
+            .collect()
+    }
+
+    /// Get the nearest neighbor key of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    #[allow(clippy::type_complexity)]
+    fn nn_key_value(&self, query: &K) -> Option<(Neighbor<K::Metric, Ix>, &'_ K, &'_ V)> {
+        self.nn(query)
+            .map(|n| (n, self.get_point(n.index), self.get_value(n.index)))
     }
 }
 
