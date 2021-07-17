@@ -86,7 +86,7 @@ where
     }
 }
 
-/// This trait gives knn search collections the ability to give the nearest neighbor keys back.
+/// This trait gives knn search collections the ability to give the nearest neighbor points back.
 ///
 /// This is not the final API. Eventually, the iterator type will be chosen by the collection,
 /// but for now it is a [`Vec`] until Rust stabilizes GATs.
