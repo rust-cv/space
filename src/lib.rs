@@ -90,6 +90,7 @@ where
 ///
 /// This is not the final API. Eventually, the iterator type will be chosen by the collection,
 /// but for now it is a [`Vec`] until Rust stabilizes GATs.
+#[cfg(feature = "alloc")]
 pub trait KnnPoints<P, Ix = usize>: Knn<P, Ix>
 where
     P: MetricPoint,
@@ -126,6 +127,7 @@ where
 ///
 /// This is not the final API. Eventually, the iterator type will be chosen by the collection,
 /// but for now it is a [`Vec`] until Rust stabilizes GATs.
+#[cfg(feature = "alloc")]
 pub trait KnnMap<K, V, Ix = usize>: KnnPoints<K, Ix>
 where
     K: MetricPoint,

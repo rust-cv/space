@@ -31,6 +31,7 @@ jobs:
         features:
           - --all-features
           - --no-default-features --features alloc
+          - --no-default-features
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
