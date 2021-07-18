@@ -1,30 +1,32 @@
-use space::{Knn, LinearKnn, MetricPoint, Neighbor};
+use space::{Knn, LinearKnn, Metric, Neighbor};
 
-#[derive(PartialEq)]
-struct Hamming(u8);
+struct Hamming;
 
-impl MetricPoint for Hamming {
-    type Metric = u8;
+impl Metric<u8> for Hamming {
+    type Unit = u8;
 
-    fn distance(&self, other: &Self) -> Self::Metric {
-        (self.0 ^ other.0).count_ones() as u8
+    fn distance(&self, &a: &u8, &b: &u8) -> Self::Unit {
+        (a ^ b).count_ones() as u8
     }
 }
 
 #[test]
 fn test_linear_knn() {
     let data = [
-        Hamming(0b1010_1010),
-        Hamming(0b1111_1111),
-        Hamming(0b0000_0000),
-        Hamming(0b1111_0000),
-        Hamming(0b0000_1111),
+        0b1010_1010,
+        0b1111_1111,
+        0b0000_0000,
+        0b1111_0000,
+        0b0000_1111,
     ];
 
-    let search = LinearKnn(data.iter());
+    let search = LinearKnn {
+        metric: Hamming,
+        iter: data.iter(),
+    };
 
     assert_eq!(
-        &search.knn(&Hamming(0b0101_0000), 3),
+        &search.knn(&0b0101_0000, 3),
         &[
             Neighbor {
                 index: 2,

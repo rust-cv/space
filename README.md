@@ -33,15 +33,15 @@ SIMD support, and always-on 64-bit popcnt instruction support).
 ## Usage
 
 ```rust
-use space::MetricPoint;
+use space::Metric;
 
-struct Hamming(u8);
+struct Hamming;
 
-impl MetricPoint for Hamming {
-    type Metric = u8;
+impl Metric<u8> for Hamming {
+    type Unit = u8;
 
-    fn distance(&self, other: &Self) -> Self::Metric {
-        (self.0 ^ other.0).count_ones() as u8
+    fn distance(&self, &a: &u8, &b: &u8) -> Self::Unit {
+        (a ^ b).count_ones() as u8
     }
 }
 ```
