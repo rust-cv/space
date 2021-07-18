@@ -228,6 +228,7 @@ pub trait KnnMap: KnnPoints {
 
 /// Implement this trait on KNN search data structures that map keys to values and which you can
 /// insert new (key, value) pairs.
+#[cfg(feature = "alloc")]
 pub trait KnnInsert: KnnMap {
     /// Insert a (key, value) pair to the [`KnnMap`].
     fn knn(&mut self, key: Self::Point, value: Self::Value);
