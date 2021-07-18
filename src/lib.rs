@@ -231,7 +231,7 @@ pub trait KnnMap: KnnPoints {
 #[cfg(feature = "alloc")]
 pub trait KnnInsert: KnnMap {
     /// Insert a (key, value) pair to the [`KnnMap`].
-    fn knn(&mut self, key: Self::Point, value: Self::Value);
+    fn insert(&mut self, key: Self::Point, value: Self::Value);
 }
 
 /// Performs a linear knn search by iterating over everything in the space
