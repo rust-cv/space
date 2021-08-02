@@ -50,7 +50,7 @@ use num_traits::Zero;
 /// struct AbsDiff;
 ///
 /// impl space::Metric<f64> for AbsDiff {
-///     type Unit = f64;
+///     type Unit = u64;
 ///
 ///     fn distance(&self, &a: &f64, &b: &f64) -> Self::Unit {
 ///         let delta = (a - b).abs();
