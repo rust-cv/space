@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use num_traits::Unsigned;
+use num_traits::Zero;
 
 /// This trait is implemented for metrics that form a metric space.
 /// It is primarily used for keys in nearest neighbor searches.
@@ -48,7 +48,7 @@ use num_traits::Unsigned;
 /// }
 /// ```
 pub trait Metric<P> {
-    type Unit: Unsigned + Ord + Copy;
+    type Unit: Ord + Zero + Copy;
 
     fn distance(&self, a: &P, b: &P) -> Self::Unit;
 }
