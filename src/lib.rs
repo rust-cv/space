@@ -16,8 +16,12 @@ use num_traits::Zero;
 
 /// This trait is implemented for metrics that form a metric space.
 /// It is primarily used for keys in nearest neighbor searches.
-/// When implementing this trait, you should always choose the smallest unsigned integer that
-/// represents your metric space.
+/// When implementing this trait, it is recommended to choose the smallest unsigned integer that
+/// represents your metric space, but you may also use a float so long as you wrap it in
+/// a newtype that enforces the `Ord + Zero + Copy` trait bounds.
+/// It is recommended to use
+/// [`NoisyFloat`](https://docs.rs/noisy_float/0.2.0/noisy_float/struct.NoisyFloat.html)
+/// for this purpose, as it implements the trait bound.
 ///
 /// It is important that all metrics that implement this trait satisfy
 /// the [triangle inequality](https://en.wikipedia.org/wiki/Triangle_inequality).
@@ -25,12 +29,20 @@ use num_traits::Zero;
 /// at a point A and end at a point B can never be less than the distance
 /// from A to B directly. Note that the metric is required to be an unsigned integer,
 /// as distances can only be positive and must be fully ordered.
+/// It is also required that two overlapping points (the same point in space) must return
+/// a distance of [`Zero::zero`].
 ///
 /// Floating point numbers can be converted to integer metrics by being interpreted as integers by design,
 /// although some special patterns (like NaN) do not fit into this model. To be interpreted as an unsigned
 /// integer, the float must be positive zero, subnormal, normal, or positive infinity. Any NaN needs
 /// to be dealt with before converting into a metric, as they do NOT satisfy the triangle inequality,
 /// and will lead to errors. You may want to check for positive infinity as well depending on your use case.
+/// You must remove NaNs if you convert to integers, but you must also remove NaNs if you use an ordered
+/// wrapper like [`NoisyFloat`](https://docs.rs/noisy_float/0.2.0/noisy_float/struct.NoisyFloat.html).
+/// Be careful if you use a wrapper like
+/// [`FloatOrd`](https://docs.rs/float-ord/0.3.2/float_ord/struct.FloatOrd.html) which does not
+/// force you to remove NaNs. When implementing a metric, you must be sure that NaNs are not allowed, because
+/// they may cause nearest neighbor algorithms to panic.
 ///
 /// ## Example
 ///
@@ -38,7 +50,7 @@ use num_traits::Zero;
 /// struct AbsDiff;
 ///
 /// impl space::Metric<f64> for AbsDiff {
-///     type Unit = u64;
+///     type Unit = f64;
 ///
 ///     fn distance(&self, &a: &f64, &b: &f64) -> Self::Unit {
 ///         let delta = (a - b).abs();
