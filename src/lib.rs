@@ -27,8 +27,7 @@ use num_traits::Zero;
 /// the [triangle inequality](https://en.wikipedia.org/wiki/Triangle_inequality).
 /// This requirement basically means that the sum of distances that start
 /// at a point A and end at a point B can never be less than the distance
-/// from A to B directly. Note that the metric is required to be an unsigned integer,
-/// as distances can only be positive and must be fully ordered.
+/// from A to B directly.
 /// It is also required that two overlapping points (the same point in space) must return
 /// a distance of [`Zero::zero`].
 ///
@@ -58,11 +57,23 @@ use num_traits::Zero;
 ///         delta.to_bits()
 ///     }
 /// }
+///
+/// use std::borrow::Cow;
+///
+/// impl<'a,'b> space::Metric<Cow<'a, f64>, Cow<'b, f64>> for AbsDiff {
+///     type Unit = u64;
+///
+///     fn distance(&self, a: &Cow<'a, f64>, b: &Cow<'b, f64>) -> Self::Unit {
+///         let delta = (a.as_ref() - b.as_ref()).abs();
+///         debug_assert!(!delta.is_nan());
+///         delta.to_bits()
+///     }
+/// }
 /// ```
-pub trait Metric<P> {
+pub trait Metric<L, R = L> {
     type Unit: Ord + Zero + Copy;
 
-    fn distance(&self, a: &P, b: &P) -> Self::Unit;
+    fn distance(&self, a: &L, b: &R) -> Self::Unit;
 }
 
 /// For k-NN algorithms to return neighbors.
