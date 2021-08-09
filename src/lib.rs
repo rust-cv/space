@@ -103,6 +103,10 @@ pub trait Knn {
     }
 }
 
+pub trait FromBatch<B> {
+    fn from_batch(batch: B) -> Self;
+}
+
 /// This trait gives knn search collections the ability to give the nearest neighbor points back.
 ///
 /// This is not the final API. Eventually, the iterator type will be chosen by the collection,
@@ -246,6 +250,18 @@ pub trait KnnInsert: KnnMap {
     ///
     /// Returns the index type
     fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix;
+}
+
+pub trait BatchInsert<B: IntoIterator<Item = (Self::Point, Self::Value)>>: KnnInsert {}
+
+impl<B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + BatchInsert<B>> FromBatch<B> for T {
+    fn from_batch(batch: B) -> Self {
+        let mut knn = Self::default();
+        for (pt, value) in batch.into_iter() {
+            knn.insert(pt, value);
+        }
+        knn
+    }
 }
 
 /// Performs a linear knn search by iterating over everything in the space
