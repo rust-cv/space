@@ -103,7 +103,19 @@ pub trait Knn {
     }
 }
 
-pub trait FromBatch<B> {
+pub trait RangeQuery: Knn {
+    type RangeIter: IntoIterator<
+        Item = Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+    >;
+
+    fn range_query(
+        &self,
+        query: &Self::Point,
+        range: <<Self as Knn>::Metric as Metric<Self::Point>>::Unit,
+    ) -> Self::RangeIter;
+}
+
+pub trait KnnFromBatch<B> {
     fn from_batch(batch: B) -> Self;
 }
 
@@ -152,6 +164,24 @@ pub trait KnnPoints: Knn {
         &'_ Self::Point,
     )> {
         self.nn(query).map(|n| (n, self.get_point(n.index)))
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub trait RangeQueryPoints: RangeQuery + KnnPoints {
+    #[allow(clippy::type_complexity)]
+    fn range_query_points(
+        &self,
+        query: &Self::Point,
+        range: <<Self as Knn>::Metric as Metric<Self::Point>>::Unit,
+    ) -> Vec<(
+        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        &'_ Self::Point,
+    )> {
+        self.range_query(query, range)
+            .into_iter()
+            .map(|n| (n, self.get_point(n.index)))
+            .collect()
     }
 }
 
@@ -242,6 +272,40 @@ pub trait KnnMap: KnnPoints {
     }
 }
 
+#[cfg(feature = "alloc")]
+pub trait RangeQueryMap: RangeQueryPoints + KnnMap {
+    #[allow(clippy::type_complexity)]
+    fn range_query_values(
+        &self,
+        query: &Self::Point,
+        range: <Self::Metric as Metric<Self::Point>>::Unit,
+    ) -> Vec<(
+        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        &'_ Self::Value,
+    )> {
+        self.range_query(query, range)
+            .into_iter()
+            .map(|n| (n, self.get_value(n.index)))
+            .collect()
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn range_query_keys_values(
+        &self,
+        query: &Self::Point,
+        range: <Self::Metric as Metric<Self::Point>>::Unit,
+    ) -> Vec<(
+        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        &'_ Self::Point,
+        &'_ Self::Value,
+    )> {
+        self.range_query(query, range)
+            .into_iter()
+            .map(|n| (n, self.get_point(n.index), self.get_value(n.index)))
+            .collect()
+    }
+}
+
 /// Implement this trait on KNN search data structures that map keys to values and which you can
 /// insert new (key, value) pairs.
 #[cfg(feature = "alloc")]
@@ -254,7 +318,9 @@ pub trait KnnInsert: KnnMap {
 
 pub trait BatchInsert<B: IntoIterator<Item = (Self::Point, Self::Value)>>: KnnInsert {}
 
-impl<B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + BatchInsert<B>> FromBatch<B> for T {
+impl<B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + BatchInsert<B>> KnnFromBatch<B>
+    for T
+{
     fn from_batch(batch: B) -> Self {
         let mut knn = Self::default();
         for (pt, value) in batch.into_iter() {
