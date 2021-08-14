@@ -10,8 +10,6 @@ extern crate alloc;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "alloc")]
-use alloc::vec::IntoIter;
-#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 use num_traits::Zero;
@@ -49,7 +47,6 @@ use num_traits::Zero;
 /// ## Example
 ///
 /// ```
-/// #[derive(Default)]
 /// struct AbsDiff;
 ///
 /// impl space::Metric<f64> for AbsDiff {
@@ -62,7 +59,7 @@ use num_traits::Zero;
 ///     }
 /// }
 /// ```
-pub trait Metric<P>: Default {
+pub trait Metric<P> {
     type Unit: Ord + Zero + Copy;
 
     fn distance(&self, a: &P, b: &P) -> Self::Unit;
@@ -101,14 +98,14 @@ pub trait Knn<'a> {
     /// This should only be used directly after one of the mentioned methods are called to retrieve
     /// a point associated with a neighbor, and will panic if the index is incorrect due to
     /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn get_point(&self, index: Self::Ix) -> &Self::Point;
+    fn point(&self, index: Self::Ix) -> &'a Self::Point;
 
     /// Get a value using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
     ///
     /// This should only be used directly after one of the mentioned methods are called to retrieve
     /// a value associated with a neighbor, and will panic if the index is incorrect due to
     /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn get_value(&self, index: Self::Ix) -> &Self::Value;
+    fn value(&self, index: Self::Ix) -> &'a Self::Value;
 
     /// Get `num` nearest neighbor keys and values of `target`.
     ///
@@ -164,30 +161,27 @@ pub trait KnnInsert<'a>: Knn<'a> {
     fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix;
 }
 
+/// Create a data structure from a metric and a batch of data points, such as a vector.
+/// For many algorithms, using batch initialization yields better results than inserting the points
+/// one at a time.
+pub trait KnnFromMetricAndBatch<M, B> {
+    fn from_metric_and_batch(metric: M, batch: B) -> Self;
+}
+
 /// Create a data structure from a batch of data points, such as a vector.
 /// For many algorithms, using batch initialization yields better results than inserting the points
 /// one at a time.
-pub trait KnnFromBatch<B> {
+pub trait KnnFromBatch<M, B>: KnnFromMetricAndBatch<M, B> {
     fn from_batch(batch: B) -> Self;
 }
 
-/// Implementing this trait grants a naive implementation of [`KnnFromBatch`] that inserts the
-/// points in the batch one at a time into the data structure.
-/// Useful for algorithms without efficient batch initialization routines.
-pub trait KnnBatchInsert<'a, B: IntoIterator<Item = (Self::Point, Self::Value)>>:
-    KnnInsert<'a>
-{
-}
-
-impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInsert<'a, B>>
-    KnnFromBatch<B> for T
+impl<M, B, T> KnnFromBatch<M, B> for T
+where
+    T: KnnFromMetricAndBatch<M, B>,
+    M: Default,
 {
     fn from_batch(batch: B) -> Self {
-        let mut knn = Self::default();
-        for (pt, value) in batch.into_iter() {
-            knn.insert(pt, value);
-        }
-        knn
+        Self::from_metric_and_batch(M::default(), batch)
     }
 }
 
@@ -218,10 +212,10 @@ impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInse
 ///     (0b0000_1111, 10),
 /// ];
 ///
-/// let search = LinearKnn::<Hamming, _, _>::from_batch(data.clone());
+/// let search: LinearKnn<Hamming, _> = KnnFromBatch::from_batch(data.iter());
 ///
 /// assert_eq!(
-///     &search.knn(&0b0101_0000, 2).collect::<Vec<_>>(),
+///     &search.knn(&0b0101_0000, 2),
 ///     &[
 ///         (Neighbor { index: 2, distance: 2 }, &data[2].0, &data[2].1),
 ///         (Neighbor { index: 3, distance: 2 }, &data[3].0, &data[3].1),
@@ -229,31 +223,33 @@ impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInse
 /// );
 /// ```
 #[cfg(feature = "alloc")]
-#[derive(Default)]
-pub struct LinearKnn<M, P, V> {
+pub struct LinearKnn<M, I> {
     pub metric: M,
-    pub points: Vec<(P, V)>,
+    pub points: I,
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
+impl<'a, M: Metric<P>, I, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, I>
+where
+    I: Iterator<Item = &'a (P, V)> + Clone,
+{
     type Ix = usize;
     type Metric = M;
     type Point = P;
     type Value = V;
-    type KnnIter = IntoIter<(Neighbor<M::Unit>, &'a P, &'a V)>;
+    type KnnIter = Vec<(Neighbor<M::Unit>, &'a P, &'a V)>;
 
-    fn get_point(&self, index: Self::Ix) -> &'_ Self::Point {
-        &self.points[index].0
+    fn point(&self, index: Self::Ix) -> &'a Self::Point {
+        &self.points.clone().nth(index).unwrap().0
     }
 
-    fn get_value(&self, index: Self::Ix) -> &'_ Self::Value {
-        &self.points[index].1
+    fn value(&self, index: Self::Ix) -> &'a Self::Value {
+        &self.points.clone().nth(index).unwrap().1
     }
 
     fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter {
         // Create an iterator mapping the dataset into `Neighbor`.
-        let mut dataset = self.points.iter().enumerate().map(|(index, (pt, val))| {
+        let mut dataset = self.points.clone().enumerate().map(|(index, (pt, val))| {
             (
                 Neighbor {
                     index,
@@ -284,7 +280,7 @@ impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
             }
         }
 
-        neighbors.into_iter()
+        neighbors
     }
 
     #[allow(clippy::type_complexity)]
@@ -293,12 +289,12 @@ impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
         query: &Self::Point,
     ) -> Option<(
         Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &Self::Point,
-        &Self::Value,
+        &'a Self::Point,
+        &'a Self::Value,
     )> {
         // Map the input iterator into neighbors and then find the smallest one by distance.
         self.points
-            .iter()
+            .clone()
             .enumerate()
             .map(|(index, (pt, val))| {
                 (
@@ -315,12 +311,11 @@ impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, M: Metric<P>, P: 'a, V: 'a> KnnInsert<'a> for LinearKnn<M, P, V> {
-    fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix {
-        self.points.push((key, value));
-        self.points.len() - 1
+impl<'a, M, I> KnnFromMetricAndBatch<M, I> for LinearKnn<M, I>
+where
+    M: Default,
+{
+    fn from_metric_and_batch(metric: M, points: I) -> Self {
+        Self { metric, points }
     }
 }
-
-#[cfg(feature = "alloc")]
-impl<'a, M: Metric<P>, P: 'a, V: 'a> KnnBatchInsert<'a, Vec<(P, V)>> for LinearKnn<M, P, V> {}

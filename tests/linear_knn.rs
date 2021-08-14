@@ -1,4 +1,4 @@
-use space::{Knn, LinearKnn, Metric, Neighbor};
+use space::{Knn, KnnFromBatch, LinearKnn, Metric, Neighbor};
 
 #[derive(Default)]
 struct Hamming;
@@ -21,13 +21,10 @@ fn test_linear_knn() {
         (0b0000_1111, 10),
     ];
 
-    let search = LinearKnn {
-        metric: Hamming,
-        points: data.clone(),
-    };
+    let search: LinearKnn<Hamming, _> = KnnFromBatch::from_batch(data.iter());
 
     assert_eq!(
-        &search.knn(&0b0101_0000, 3).collect::<Vec<_>>(),
+        &search.knn(&0b0101_0000, 3),
         &[
             (
                 Neighbor {
