@@ -196,8 +196,9 @@ impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInse
 /// ## Example
 ///
 /// ```
-/// use space::{Knn, LinearKnn, Metric, Neighbor};
+/// use space::{Knn, LinearKnn, Metric, Neighbor, KnnFromBatch};
 ///
+/// #[derive(Default)]
 /// struct Hamming;
 ///
 /// impl Metric<u8> for Hamming {
@@ -216,10 +217,7 @@ impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInse
 ///     (0b0000_1111, 10),
 /// ];
 ///
-/// let search = LinearKnn {
-///     metric: Hamming,
-///     points: data.clone(),
-/// };
+/// let search = LinearKnn::<Hamming, _, _>::from_batch(data.clone());
 ///
 /// assert_eq!(
 ///     &search.knn(&0b0101_0000, 2).collect::<Vec<_>>(),
@@ -315,5 +313,13 @@ impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
     }
 }
 
-//#[cfg(feature = "alloc")]
-//impl<'a, M, P> KnnBatchInsert<'a> for LinearKnn<M, P> {}
+#[cfg(feature = "alloc")]
+impl<'a, M: Metric<P>, P: 'a, V: 'a> KnnInsert<'a> for LinearKnn<M, P, V> {
+    fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix {
+        self.points.push((key, value));
+        self.points.len() - 1
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, M: Metric<P>, P: 'a, V: 'a> KnnBatchInsert<'a, Vec<(P, V)>> for LinearKnn<M, P, V> {}
