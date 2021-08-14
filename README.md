@@ -35,6 +35,7 @@ SIMD support, and always-on 64-bit popcnt instruction support).
 ```rust
 use space::Metric;
 
+#[derive(Default)]
 struct Hamming;
 
 impl Metric<u8> for Hamming {

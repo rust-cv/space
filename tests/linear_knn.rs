@@ -1,5 +1,6 @@
 use space::{Knn, LinearKnn, Metric, Neighbor};
 
+#[derive(Default)]
 struct Hamming;
 
 impl Metric<u8> for Hamming {

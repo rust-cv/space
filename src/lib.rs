@@ -49,6 +49,7 @@ use num_traits::Zero;
 /// ## Example
 ///
 /// ```
+/// #[derive(Default)]
 /// struct AbsDiff;
 ///
 /// impl space::Metric<f64> for AbsDiff {
@@ -61,7 +62,7 @@ use num_traits::Zero;
 ///     }
 /// }
 /// ```
-pub trait Metric<P> {
+pub trait Metric<P>: Default {
     type Unit: Ord + Zero + Copy;
 
     fn distance(&self, a: &P, b: &P) -> Self::Unit;
