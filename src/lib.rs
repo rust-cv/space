@@ -77,14 +77,11 @@ pub struct Neighbor<Unit, Ix = usize> {
     pub distance: Unit,
 }
 
-pub trait KnnFromBatch<B> {
-    fn from_batch(batch: B) -> Self;
-}
-
-/// This trait gives knn search collections the ability to give the nearest neighbor values back.
+/// Implement this trait on data structures (or wrappers) which perform KNN searches.
+/// The data structure should maintain a key-value mapping between neighbour points and data
+/// values.
 ///
-/// This is not the final API. Eventually, the iterator type will be chosen by the collection,
-/// but for now it is a [`Vec`] until Rust stabilizes GATs.
+/// The lifetime on the trait will be removed once GATs are stabilized.
 pub trait Knn<'a> {
     type Ix: Copy;
     type Point: 'a;
@@ -112,13 +109,13 @@ pub trait Knn<'a> {
     /// mutating the data structure thereafter. The index is only valid up until the next mutation.
     fn get_value(&self, index: Self::Ix) -> &Self::Value;
 
-    /// Get `num` nearest neighbor keys of `target`.
+    /// Get `num` nearest neighbor keys and values of `target`.
     ///
     /// For many KNN search algorithms, the returned neighbors are approximate, and may not
     /// be the actual nearest neighbors.
     fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter;
 
-    /// Get the nearest neighbor key of `target`.
+    /// Get the nearest neighbor key and values of `target`.
     ///
     /// For many KNN search algorithms, the returned neighbors are approximate, and may not
     /// be the actual nearest neighbors.
@@ -133,6 +130,11 @@ pub trait Knn<'a> {
     )>;
 }
 
+/// Implement this trait on data structures (or wrappers) which perform range queries.
+/// The data structure should maintain a key-value mapping between neighbour points and data
+/// values.
+///
+/// The lifetime on the trait will be removed once GATs are stabilized.
 pub trait RangeQuery<'a>: Knn<'a> {
     type RangeIter: IntoIterator<
         Item = (
@@ -142,6 +144,8 @@ pub trait RangeQuery<'a>: Knn<'a> {
         ),
     >;
 
+    /// Get all the points in the data structure that lie within a specified range of the query
+    /// point. The points may or may not be sorted by distance.
     #[allow(clippy::type_complexity)]
     fn range_query(
         &self,
@@ -159,12 +163,22 @@ pub trait KnnInsert<'a>: Knn<'a> {
     fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix;
 }
 
-pub trait BatchInsert<'a, B: IntoIterator<Item = (Self::Point, Self::Value)>>:
+/// Create a data structure from a batch of data points, such as a vector.
+/// For many algorithms, using batch initialization yields better results than inserting the points
+/// one at a time.
+pub trait KnnFromBatch<B> {
+    fn from_batch(batch: B) -> Self;
+}
+
+/// Implementing this trait grants a naive implementation of [`KnnFromBatch`] that inserts the
+/// points in the batch one at a time into the data structure.
+/// Useful for algorithms without efficient batch initialization routines.
+pub trait KnnBatchInsert<'a, B: IntoIterator<Item = (Self::Point, Self::Value)>>:
     KnnInsert<'a>
 {
 }
 
-impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + BatchInsert<'a, B>>
+impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInsert<'a, B>>
     KnnFromBatch<B> for T
 {
     fn from_batch(batch: B) -> Self {
