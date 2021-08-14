@@ -13,41 +13,44 @@ impl Metric<u8> for Hamming {
 #[test]
 fn test_linear_knn() {
     let data = vec![
-        0b1010_1010,
-        0b1111_1111,
-        0b0000_0000,
-        0b1111_0000,
-        0b0000_1111,
+        (0b1010_1010, 12),
+        (0b1111_1111, 13),
+        (0b0000_0000, 14),
+        (0b1111_0000, 16),
+        (0b0000_1111, 10),
     ];
 
-    let search = LinearKnn::new(Hamming, data.clone());
+    let search = LinearKnn {
+        metric: Hamming,
+        points: data.clone(),
+    };
 
     assert_eq!(
-        &search
-            .knn(&0b0101_0000, 3)
-            .map(|(n, &pt, _)| (n, pt))
-            .collect::<Vec<_>>(),
+        &search.knn(&0b0101_0000, 3).collect::<Vec<_>>(),
         &[
             (
                 Neighbor {
                     index: 2,
                     distance: 2
                 },
-                data[2]
+                &data[2].0,
+                &data[2].1
             ),
             (
                 Neighbor {
                     index: 3,
                     distance: 2
                 },
-                data[3]
+                &data[3].0,
+                &data[3].1
             ),
             (
                 Neighbor {
                     index: 0,
                     distance: 6
                 },
-                data[0]
+                &data[0].0,
+                &data[0].1
             )
         ]
     );

@@ -209,68 +209,61 @@ impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInse
 /// }
 ///
 /// let data = vec![
-///     0b1010_1010,
-///     0b1111_1111,
-///     0b0000_0000,
-///     0b1111_0000,
-///     0b0000_1111,
+///     (0b1010_1010, 12),
+///     (0b1111_1111, 13),
+///     (0b0000_0000, 14),
+///     (0b1111_0000, 16),
+///     (0b0000_1111, 10),
 /// ];
 ///
-/// let search = LinearKnn::new(Hamming, data.clone());
+/// let search = LinearKnn {
+///     metric: Hamming,
+///     points: data.clone(),
+/// };
 ///
 /// assert_eq!(
-///     &search.knn(&0b0101_0000, 3).map(|(n, _, _)| n).collect::<Vec<_>>(),
+///     &search.knn(&0b0101_0000, 2).collect::<Vec<_>>(),
 ///     &[
-///         Neighbor { index: 2, distance: 2 },
-///         Neighbor { index: 3, distance: 2 },
-///         Neighbor { index: 0, distance: 6 },
+///         (Neighbor { index: 2, distance: 2 }, &data[2].0, &data[2].1),
+///         (Neighbor { index: 3, distance: 2 }, &data[3].0, &data[3].1),
 ///     ]
 /// );
 /// ```
 #[cfg(feature = "alloc")]
-pub struct LinearKnn<M, P> {
+#[derive(Default)]
+pub struct LinearKnn<M, P, V> {
     pub metric: M,
-    pub points: Vec<P>,
-    placeholder: (),
+    pub points: Vec<(P, V)>,
 }
 
 #[cfg(feature = "alloc")]
-impl<M, P> LinearKnn<M, P> {
-    pub fn new(metric: M, points: Vec<P>) -> Self {
-        LinearKnn {
-            metric,
-            points,
-            placeholder: (),
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<'a, M: Metric<P>, P: 'a> Knn<'a> for LinearKnn<M, P> {
+impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
     type Ix = usize;
     type Metric = M;
     type Point = P;
-    type KnnIter = IntoIter<(Neighbor<M::Unit>, &'a P, &'a ())>;
-    type Value = ();
+    type Value = V;
+    type KnnIter = IntoIter<(Neighbor<M::Unit>, &'a P, &'a V)>;
 
     fn get_point(&self, index: Self::Ix) -> &'_ Self::Point {
-        &self.points[index]
+        &self.points[index].0
     }
 
-    fn get_value(&self, _index: Self::Ix) -> &'_ Self::Value {
-        &self.placeholder
+    fn get_value(&self, index: Self::Ix) -> &'_ Self::Value {
+        &self.points[index].1
     }
 
     fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter {
         // Create an iterator mapping the dataset into `Neighbor`.
-        let mut dataset = self
-            .points
-            .iter()
-            .map(|point| (point, self.metric.distance(point, query)))
-            .enumerate()
-            .map(|(index, (point, distance))| {
-                (Neighbor { index, distance }, point, &self.placeholder)
-            });
+        let mut dataset = self.points.iter().enumerate().map(|(index, (pt, val))| {
+            (
+                Neighbor {
+                    index,
+                    distance: self.metric.distance(pt, query),
+                },
+                pt,
+                val,
+            )
+        });
 
         // Create a vector with the correct capacity in advance.
         let mut neighbors = Vec::with_capacity(num);
@@ -307,11 +300,20 @@ impl<'a, M: Metric<P>, P: 'a> Knn<'a> for LinearKnn<M, P> {
         // Map the input iterator into neighbors and then find the smallest one by distance.
         self.points
             .iter()
-            .map(|point| (point, self.metric.distance(point, query)))
             .enumerate()
-            .map(|(index, (point, distance))| {
-                (Neighbor { index, distance }, point, &self.placeholder)
+            .map(|(index, (pt, val))| {
+                (
+                    Neighbor {
+                        index,
+                        distance: self.metric.distance(pt, query),
+                    },
+                    pt,
+                    val,
+                )
             })
             .min_by_key(|n| n.0.distance)
     }
 }
+
+//#[cfg(feature = "alloc")]
+//impl<'a, M, P> KnnBatchInsert<'a> for LinearKnn<M, P> {}
