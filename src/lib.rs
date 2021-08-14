@@ -10,6 +10,8 @@ extern crate alloc;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "alloc")]
+use alloc::vec::IntoIter;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 use num_traits::Zero;
@@ -47,6 +49,7 @@ use num_traits::Zero;
 /// ## Example
 ///
 /// ```
+/// #[derive(Default)]
 /// struct AbsDiff;
 ///
 /// impl space::Metric<f64> for AbsDiff {
@@ -59,7 +62,7 @@ use num_traits::Zero;
 ///     }
 /// }
 /// ```
-pub trait Metric<P> {
+pub trait Metric<P>: Default {
     type Unit: Ord + Zero + Copy;
 
     fn distance(&self, a: &P, b: &P) -> Self::Unit;
@@ -76,176 +79,116 @@ pub struct Neighbor<Unit, Ix = usize> {
 }
 
 /// Implement this trait on data structures (or wrappers) which perform KNN searches.
-pub trait Knn {
+/// The data structure should maintain a key-value mapping between neighbour points and data
+/// values.
+///
+/// The lifetime on the trait will be removed once GATs are stabilized.
+pub trait Knn<'a> {
     type Ix: Copy;
-    type Point;
+    type Point: 'a;
+    type Value: 'a;
     type Metric: Metric<Self::Point>;
     type KnnIter: IntoIterator<
-        Item = Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        Item = (
+            Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+            &'a Self::Point,
+            &'a Self::Value,
+        ),
     >;
 
-    /// Get `num` nearest neighbors of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    fn knn(&self, query: &Self::Point, num: usize) -> Self::KnnIter;
-
-    /// Get the nearest neighbor of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    #[allow(clippy::type_complexity)]
-    fn nn(
-        &self,
-        query: &Self::Point,
-    ) -> Option<Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>> {
-        self.knn(query, 1).into_iter().next()
-    }
-}
-
-/// This trait gives knn search collections the ability to give the nearest neighbor points back.
-///
-/// This is not the final API. Eventually, the iterator type will be chosen by the collection,
-/// but for now it is a [`Vec`] until Rust stabilizes GATs.
-#[cfg(feature = "alloc")]
-pub trait KnnPoints: Knn {
     /// Get a point using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
     ///
     /// This should only be used directly after one of the mentioned methods are called to retrieve
     /// a point associated with a neighbor, and will panic if the index is incorrect due to
     /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn get_point(&self, index: Self::Ix) -> &'_ Self::Point;
-
-    /// Get `num` nearest neighbor points of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    #[allow(clippy::type_complexity)]
-    fn knn_points(
-        &self,
-        query: &Self::Point,
-        num: usize,
-    ) -> Vec<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &'_ Self::Point,
-    )> {
-        self.knn(query, num)
-            .into_iter()
-            .map(|n| (n, self.get_point(n.index)))
-            .collect()
-    }
-
-    /// Get the nearest neighbor point of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    #[allow(clippy::type_complexity)]
-    fn nn_point(
-        &self,
-        query: &Self::Point,
-    ) -> Option<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &'_ Self::Point,
-    )> {
-        self.nn(query).map(|n| (n, self.get_point(n.index)))
-    }
-}
-
-/// This trait gives knn search collections the ability to give the nearest neighbor values back.
-///
-/// This is not the final API. Eventually, the iterator type will be chosen by the collection,
-/// but for now it is a [`Vec`] until Rust stabilizes GATs.
-#[cfg(feature = "alloc")]
-pub trait KnnMap: KnnPoints {
-    type Value;
+    fn get_point(&self, index: Self::Ix) -> &Self::Point;
 
     /// Get a value using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
     ///
     /// This should only be used directly after one of the mentioned methods are called to retrieve
     /// a value associated with a neighbor, and will panic if the index is incorrect due to
     /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn get_value(&self, index: Self::Ix) -> &'_ Self::Value;
+    fn get_value(&self, index: Self::Ix) -> &Self::Value;
 
-    /// Get `num` nearest neighbor keys of `target`.
+    /// Get `num` nearest neighbor keys and values of `target`.
+    ///
+    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
+    /// be the actual nearest neighbors.
+    fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter;
+
+    /// Get the nearest neighbor key and values of `target`.
     ///
     /// For many KNN search algorithms, the returned neighbors are approximate, and may not
     /// be the actual nearest neighbors.
     #[allow(clippy::type_complexity)]
-    fn knn_values(
-        &self,
-        query: &Self::Point,
-        num: usize,
-    ) -> Vec<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &'_ Self::Value,
-    )> {
-        self.knn(query, num)
-            .into_iter()
-            .map(|n| (n, self.get_value(n.index)))
-            .collect()
-    }
-
-    /// Get the nearest neighbor key of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    #[allow(clippy::type_complexity)]
-    fn nn_value(
-        &self,
+    fn nn(
+        &'a self,
         query: &Self::Point,
     ) -> Option<(
         Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &'_ Self::Value,
-    )> {
-        self.nn(query).map(|n| (n, self.get_value(n.index)))
-    }
+        &'a Self::Point,
+        &'a Self::Value,
+    )>;
+}
 
-    /// Get `num` nearest neighbor keys of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
+/// Implement this trait on data structures (or wrappers) which perform range queries.
+/// The data structure should maintain a key-value mapping between neighbour points and data
+/// values.
+///
+/// The lifetime on the trait will be removed once GATs are stabilized.
+pub trait RangeQuery<'a>: Knn<'a> {
+    type RangeIter: IntoIterator<
+        Item = (
+            Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+            &'a Self::Point,
+            &'a Self::Value,
+        ),
+    >;
+
+    /// Get all the points in the data structure that lie within a specified range of the query
+    /// point. The points may or may not be sorted by distance.
     #[allow(clippy::type_complexity)]
-    fn knn_keys_values(
+    fn range_query(
         &self,
         query: &Self::Point,
-        num: usize,
-    ) -> Vec<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &'_ Self::Point,
-        &'_ Self::Value,
-    )> {
-        self.knn(query, num)
-            .into_iter()
-            .map(|n| (n, self.get_point(n.index), self.get_value(n.index)))
-            .collect()
-    }
-
-    /// Get the nearest neighbor key of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    #[allow(clippy::type_complexity)]
-    fn nn_key_value(
-        &self,
-        query: &Self::Point,
-    ) -> Option<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
-        &'_ Self::Point,
-        &'_ Self::Value,
-    )> {
-        self.nn(query)
-            .map(|n| (n, self.get_point(n.index), self.get_value(n.index)))
-    }
+        range: <Self::Metric as Metric<Self::Point>>::Unit,
+    ) -> Self::RangeIter;
 }
 
 /// Implement this trait on KNN search data structures that map keys to values and which you can
 /// insert new (key, value) pairs.
-#[cfg(feature = "alloc")]
-pub trait KnnInsert: KnnMap {
+pub trait KnnInsert<'a>: Knn<'a> {
     /// Insert a (key, value) pair to the [`KnnMap`].
     ///
     /// Returns the index type
     fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix;
+}
+
+/// Create a data structure from a batch of data points, such as a vector.
+/// For many algorithms, using batch initialization yields better results than inserting the points
+/// one at a time.
+pub trait KnnFromBatch<B> {
+    fn from_batch(batch: B) -> Self;
+}
+
+/// Implementing this trait grants a naive implementation of [`KnnFromBatch`] that inserts the
+/// points in the batch one at a time into the data structure.
+/// Useful for algorithms without efficient batch initialization routines.
+pub trait KnnBatchInsert<'a, B: IntoIterator<Item = (Self::Point, Self::Value)>>:
+    KnnInsert<'a>
+{
+}
+
+impl<'a, B: IntoIterator<Item = (T::Point, T::Value)>, T: Default + KnnBatchInsert<'a, B>>
+    KnnFromBatch<B> for T
+{
+    fn from_batch(batch: B) -> Self {
+        let mut knn = Self::default();
+        for (pt, value) in batch.into_iter() {
+            knn.insert(pt, value);
+        }
+        knn
+    }
 }
 
 /// Performs a linear knn search by iterating over everything in the space
@@ -254,8 +197,9 @@ pub trait KnnInsert: KnnMap {
 /// ## Example
 ///
 /// ```
-/// use space::{Knn, LinearKnn, Metric, Neighbor};
+/// use space::{Knn, LinearKnn, Metric, Neighbor, KnnFromBatch};
 ///
+/// #[derive(Default)]
 /// struct Hamming;
 ///
 /// impl Metric<u8> for Hamming {
@@ -266,53 +210,59 @@ pub trait KnnInsert: KnnMap {
 ///     }
 /// }
 ///
-/// let data = [
-///     0b1010_1010,
-///     0b1111_1111,
-///     0b0000_0000,
-///     0b1111_0000,
-///     0b0000_1111,
+/// let data = vec![
+///     (0b1010_1010, 12),
+///     (0b1111_1111, 13),
+///     (0b0000_0000, 14),
+///     (0b1111_0000, 16),
+///     (0b0000_1111, 10),
 /// ];
 ///
-/// let search = LinearKnn {
-///     metric: Hamming,
-///     iter: data.iter(),
-/// };
+/// let search = LinearKnn::<Hamming, _, _>::from_batch(data.clone());
 ///
 /// assert_eq!(
-///     &search.knn(&0b0101_0000, 3),
+///     &search.knn(&0b0101_0000, 2).collect::<Vec<_>>(),
 ///     &[
-///         Neighbor { index: 2, distance: 2 },
-///         Neighbor { index: 3, distance: 2 },
-///         Neighbor { index: 0, distance: 6 },
+///         (Neighbor { index: 2, distance: 2 }, &data[2].0, &data[2].1),
+///         (Neighbor { index: 3, distance: 2 }, &data[3].0, &data[3].1),
 ///     ]
 /// );
 /// ```
 #[cfg(feature = "alloc")]
-pub struct LinearKnn<M, I> {
+#[derive(Default)]
+pub struct LinearKnn<M, P, V> {
     pub metric: M,
-    pub iter: I,
+    pub points: Vec<(P, V)>,
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, M, P: 'a, I> Knn for LinearKnn<M, I>
-where
-    M: Metric<P>,
-    I: Clone + Iterator<Item = &'a P>,
-{
+impl<'a, M: Metric<P>, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, P, V> {
     type Ix = usize;
     type Metric = M;
     type Point = P;
-    type KnnIter = Vec<Neighbor<M::Unit>>;
+    type Value = V;
+    type KnnIter = IntoIter<(Neighbor<M::Unit>, &'a P, &'a V)>;
 
-    fn knn(&self, query: &P, num: usize) -> Self::KnnIter {
+    fn get_point(&self, index: Self::Ix) -> &'_ Self::Point {
+        &self.points[index].0
+    }
+
+    fn get_value(&self, index: Self::Ix) -> &'_ Self::Value {
+        &self.points[index].1
+    }
+
+    fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter {
         // Create an iterator mapping the dataset into `Neighbor`.
-        let mut dataset = self
-            .iter
-            .clone()
-            .map(|point| self.metric.distance(point, query))
-            .enumerate()
-            .map(|(index, distance)| Neighbor { index, distance });
+        let mut dataset = self.points.iter().enumerate().map(|(index, (pt, val))| {
+            (
+                Neighbor {
+                    index,
+                    distance: self.metric.distance(pt, query),
+                },
+                pt,
+                val,
+            )
+        });
 
         // Create a vector with the correct capacity in advance.
         let mut neighbors = Vec::with_capacity(num);
@@ -320,12 +270,12 @@ where
         // Extend the vector with the first `num` neighbors.
         neighbors.extend((&mut dataset).take(num));
         // Sort the vector by the neighbor distance.
-        neighbors.sort_unstable_by_key(|n| n.distance);
+        neighbors.sort_unstable_by_key(|n| n.0.distance);
 
         // Iterate over each additional neighbor.
         for point in dataset {
             // Find the position at which it would be inserted.
-            let position = neighbors.partition_point(|n| n.distance <= point.distance);
+            let position = neighbors.partition_point(|n| n.0.distance <= point.0.distance);
             // If the point is closer than at least one of the points already in `neighbors`, add it
             // into its sorted position.
             if position != num {
@@ -334,16 +284,43 @@ where
             }
         }
 
-        neighbors
+        neighbors.into_iter()
     }
 
-    fn nn(&self, query: &P) -> Option<Neighbor<M::Unit>> {
+    #[allow(clippy::type_complexity)]
+    fn nn(
+        &self,
+        query: &Self::Point,
+    ) -> Option<(
+        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        &Self::Point,
+        &Self::Value,
+    )> {
         // Map the input iterator into neighbors and then find the smallest one by distance.
-        self.iter
-            .clone()
-            .map(|point| self.metric.distance(point, query))
+        self.points
+            .iter()
             .enumerate()
-            .map(|(index, distance)| Neighbor { index, distance })
-            .min_by_key(|n| n.distance)
+            .map(|(index, (pt, val))| {
+                (
+                    Neighbor {
+                        index,
+                        distance: self.metric.distance(pt, query),
+                    },
+                    pt,
+                    val,
+                )
+            })
+            .min_by_key(|n| n.0.distance)
     }
 }
+
+#[cfg(feature = "alloc")]
+impl<'a, M: Metric<P>, P: 'a, V: 'a> KnnInsert<'a> for LinearKnn<M, P, V> {
+    fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix {
+        self.points.push((key, value));
+        self.points.len() - 1
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, M: Metric<P>, P: 'a, V: 'a> KnnBatchInsert<'a, Vec<(P, V)>> for LinearKnn<M, P, V> {}
