@@ -90,7 +90,7 @@ pub trait Knn<'a> {
     type Point: 'a;
     type Value: 'a;
     type Metric: Metric<Self::Point>;
-    type KnnIter: Iterator<
+    type KnnIter: IntoIterator<
         Item = (
             Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
             &'a Self::Point,
@@ -134,7 +134,7 @@ pub trait Knn<'a> {
 }
 
 pub trait RangeQuery<'a>: Knn<'a> {
-    type RangeIter: Iterator<
+    type RangeIter: IntoIterator<
         Item = (
             Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
             &'a Self::Point,
