@@ -6,9 +6,6 @@ doc_comment::doctest!("../README.md");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
