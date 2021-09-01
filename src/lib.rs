@@ -93,20 +93,6 @@ pub trait Knn<'a> {
         ),
     >;
 
-    /// Get a point using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
-    ///
-    /// This should only be used directly after one of the mentioned methods are called to retrieve
-    /// a point associated with a neighbor, and will panic if the index is incorrect due to
-    /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn point(&self, index: Self::Ix) -> &'a Self::Point;
-
-    /// Get a value using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
-    ///
-    /// This should only be used directly after one of the mentioned methods are called to retrieve
-    /// a value associated with a neighbor, and will panic if the index is incorrect due to
-    /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn value(&self, index: Self::Ix) -> &'a Self::Value;
-
     /// Get `num` nearest neighbor keys and values of `target`.
     ///
     /// For many KNN search algorithms, the returned neighbors are approximate, and may not
@@ -238,14 +224,6 @@ where
     type Point = P;
     type Value = V;
     type KnnIter = Vec<(Neighbor<M::Unit>, &'a P, &'a V)>;
-
-    fn point(&self, index: Self::Ix) -> &'a Self::Point {
-        &self.points.clone().nth(index).unwrap().0
-    }
-
-    fn value(&self, index: Self::Ix) -> &'a Self::Value {
-        &self.points.clone().nth(index).unwrap().1
-    }
 
     fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter {
         // Create an iterator mapping the dataset into `Neighbor`.
