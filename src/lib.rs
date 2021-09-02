@@ -6,9 +6,6 @@ doc_comment::doctest!("../README.md");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
@@ -65,47 +62,22 @@ pub trait Metric<P> {
     fn distance(&self, a: &P, b: &P) -> Self::Unit;
 }
 
-/// For k-NN algorithms to return neighbors.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Neighbor<Unit, Ix = usize> {
-    /// Index of the neighbor in the search space.
-    pub index: Ix,
-    /// The distance of the neighbor from the search feature.
-    pub distance: Unit,
-}
-
 /// Implement this trait on data structures (or wrappers) which perform KNN searches.
 /// The data structure should maintain a key-value mapping between neighbour points and data
 /// values.
 ///
 /// The lifetime on the trait will be removed once GATs are stabilized.
 pub trait Knn<'a> {
-    type Ix: Copy;
     type Point: 'a;
     type Value: 'a;
     type Metric: Metric<Self::Point>;
     type KnnIter: IntoIterator<
         Item = (
-            Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+            <Self::Metric as Metric<Self::Point>>::Unit,
             &'a Self::Point,
             &'a Self::Value,
         ),
     >;
-
-    /// Get a point using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
-    ///
-    /// This should only be used directly after one of the mentioned methods are called to retrieve
-    /// a point associated with a neighbor, and will panic if the index is incorrect due to
-    /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn point(&self, index: Self::Ix) -> &'a Self::Point;
-
-    /// Get a value using a neighbor index returned by [`Knn::knn`] or [`Knn::nn`].
-    ///
-    /// This should only be used directly after one of the mentioned methods are called to retrieve
-    /// a value associated with a neighbor, and will panic if the index is incorrect due to
-    /// mutating the data structure thereafter. The index is only valid up until the next mutation.
-    fn value(&self, index: Self::Ix) -> &'a Self::Value;
 
     /// Get `num` nearest neighbor keys and values of `target`.
     ///
@@ -122,7 +94,7 @@ pub trait Knn<'a> {
         &'a self,
         query: &Self::Point,
     ) -> Option<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        <Self::Metric as Metric<Self::Point>>::Unit,
         &'a Self::Point,
         &'a Self::Value,
     )>;
@@ -136,7 +108,7 @@ pub trait Knn<'a> {
 pub trait RangeQuery<'a>: Knn<'a> {
     type RangeIter: IntoIterator<
         Item = (
-            Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+            <Self::Metric as Metric<Self::Point>>::Unit,
             &'a Self::Point,
             &'a Self::Value,
         ),
@@ -158,7 +130,7 @@ pub trait KnnInsert<'a>: Knn<'a> {
     /// Insert a (key, value) pair to the [`KnnMap`].
     ///
     /// Returns the index type
-    fn insert(&mut self, key: Self::Point, value: Self::Value) -> Self::Ix;
+    fn insert(&mut self, key: Self::Point, value: Self::Value);
 }
 
 /// Create a data structure from a metric and a batch of data points, such as a vector.
@@ -191,7 +163,7 @@ where
 /// ## Example
 ///
 /// ```
-/// use space::{Knn, LinearKnn, Metric, Neighbor, KnnFromBatch};
+/// use space::{Knn, LinearKnn, Metric, KnnFromBatch};
 ///
 /// #[derive(Default)]
 /// struct Hamming;
@@ -217,8 +189,8 @@ where
 /// assert_eq!(
 ///     &search.knn(&0b0101_0000, 2),
 ///     &[
-///         (Neighbor { index: 2, distance: 2 }, &data[2].0, &data[2].1),
-///         (Neighbor { index: 3, distance: 2 }, &data[3].0, &data[3].1),
+///         (2, &data[2].0, &data[2].1),
+///         (2, &data[3].0, &data[3].1),
 ///     ]
 /// );
 /// ```
@@ -233,32 +205,16 @@ impl<'a, M: Metric<P>, I, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, I>
 where
     I: Iterator<Item = &'a (P, V)> + Clone,
 {
-    type Ix = usize;
     type Metric = M;
     type Point = P;
     type Value = V;
-    type KnnIter = Vec<(Neighbor<M::Unit>, &'a P, &'a V)>;
-
-    fn point(&self, index: Self::Ix) -> &'a Self::Point {
-        &self.points.clone().nth(index).unwrap().0
-    }
-
-    fn value(&self, index: Self::Ix) -> &'a Self::Value {
-        &self.points.clone().nth(index).unwrap().1
-    }
+    type KnnIter = Vec<(M::Unit, &'a P, &'a V)>;
 
     fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter {
-        // Create an iterator mapping the dataset into `Neighbor`.
-        let mut dataset = self.points.clone().enumerate().map(|(index, (pt, val))| {
-            (
-                Neighbor {
-                    index,
-                    distance: self.metric.distance(pt, query),
-                },
-                pt,
-                val,
-            )
-        });
+        let mut dataset = self
+            .points
+            .clone()
+            .map(|(pt, val)| (self.metric.distance(pt, query), pt, val));
 
         // Create a vector with the correct capacity in advance.
         let mut neighbors = Vec::with_capacity(num);
@@ -266,12 +222,12 @@ where
         // Extend the vector with the first `num` neighbors.
         neighbors.extend((&mut dataset).take(num));
         // Sort the vector by the neighbor distance.
-        neighbors.sort_unstable_by_key(|n| n.0.distance);
+        neighbors.sort_unstable_by_key(|n| n.0);
 
         // Iterate over each additional neighbor.
         for point in dataset {
             // Find the position at which it would be inserted.
-            let position = neighbors.partition_point(|n| n.0.distance <= point.0.distance);
+            let position = neighbors.partition_point(|n| n.0 <= point.0);
             // If the point is closer than at least one of the points already in `neighbors`, add it
             // into its sorted position.
             if position != num {
@@ -288,25 +244,15 @@ where
         &self,
         query: &Self::Point,
     ) -> Option<(
-        Neighbor<<Self::Metric as Metric<Self::Point>>::Unit, Self::Ix>,
+        <Self::Metric as Metric<Self::Point>>::Unit,
         &'a Self::Point,
         &'a Self::Value,
     )> {
         // Map the input iterator into neighbors and then find the smallest one by distance.
         self.points
             .clone()
-            .enumerate()
-            .map(|(index, (pt, val))| {
-                (
-                    Neighbor {
-                        index,
-                        distance: self.metric.distance(pt, query),
-                    },
-                    pt,
-                    val,
-                )
-            })
-            .min_by_key(|n| n.0.distance)
+            .map(|(pt, val)| (self.metric.distance(pt, query), pt, val))
+            .min_by_key(|n| n.0)
     }
 }
 
