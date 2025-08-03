@@ -13,7 +13,7 @@ impl Metric<u8> for Hamming {
 
 #[test]
 fn test_linear_knn() {
-    let data = vec![
+    let data = [
         (0b1010_1010, 12),
         (0b1111_1111, 13),
         (0b0000_0000, 14),

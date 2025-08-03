@@ -257,7 +257,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, M, I> KnnFromMetricAndBatch<M, I> for LinearKnn<M, I>
+impl<M, I> KnnFromMetricAndBatch<M, I> for LinearKnn<M, I>
 where
     M: Default,
 {
