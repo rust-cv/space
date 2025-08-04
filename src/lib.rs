@@ -7,9 +7,13 @@ doc_comment::doctest!("../README.md");
 extern crate alloc;
 
 #[cfg(feature = "alloc")]
-use alloc::vec::Vec;
+mod linear;
+
+#[cfg(feature = "alloc")]
+pub use linear::*;
 
 use num_traits::Zero;
+use pgat::{Owned, ProxyView, View};
 
 /// This trait is implemented for metrics that form a metric space.
 /// It is primarily used for keys in nearest neighbor searches.
@@ -44,9 +48,12 @@ use num_traits::Zero;
 /// ## Example
 ///
 /// ```
+/// use pgat::ReferenceProxy;
+///
+/// #[derive(Copy, Clone, Default)]
 /// struct AbsDiff;
 ///
-/// impl space::Metric<f64> for AbsDiff {
+/// impl space::Metric<ReferenceProxy<f64>> for AbsDiff {
 ///     type Unit = u64;
 ///
 ///     fn distance(&self, &a: &f64, &b: &f64) -> Self::Unit {
@@ -56,212 +63,176 @@ use num_traits::Zero;
 ///     }
 /// }
 /// ```
-pub trait Metric<P> {
+pub trait Metric<P: ProxyView>: Copy {
     type Unit: Ord + Zero + Copy;
 
-    fn distance(&self, a: &P, b: &P) -> Self::Unit;
+    fn distance<'a, 'b>(&self, a: View<'a, P>, b: View<'b, P>) -> Self::Unit;
 }
+
+pub type MetricUnit<M, P> = <M as Metric<P>>::Unit;
+
+/// Implement this trait on data structures (or wrappers) which perform spatial searches.
+///
+/// Note that [`ApproximateSpace`] encompasses both exact and approximate searches.
+/// Approximate searches may not always return the actual nearest neighbors or the entire set of neighbors in a region.
+/// Returning the exact set of neighbors that belong in the query results is also known as 100% recall.
+/// The amount of recall you get depends on the exact data structure and algorithm used to perform the search.
+/// If you need exact nearest neighbor search (guaranteed 100% recall), instead depend on the [`ExactSpace`] trait.
+pub trait ApproximateSpace {
+    type PointProxy: ProxyView;
+    type ValueProxy: ProxyView;
+    type Metric: Metric<Self::PointProxy>;
+}
+
+/// This marker trait indicates that the methods provided by search algorithms are exact.
+/// It has no further functionality at this time. Implement this on search data structures
+/// that guarantee exact nearest neighbor search.
+///
+/// In this context, exact doesn't mean equidistant neighbors will always be returned, nor does it mean
+/// that the same query will always return the same neighbors. However, it does mean that closer neighbors
+/// will always be returned before farther neighbors under the ordering of the metric used.
+pub trait ExactSpace: ApproximateSpace {}
 
 /// Implement this trait on data structures (or wrappers) which perform KNN searches.
 /// The data structure should maintain a key-value mapping between neighbour points and data
-/// values.
+/// values. It must be able to output the distance between the query point and the neighbours,
+/// which is included in the results.
 ///
-/// The lifetime on the trait will be removed once GATs are stabilized.
-pub trait Knn<'a> {
-    type Point: 'a;
-    type Value: 'a;
-    type Metric: Metric<Self::Point>;
-    type KnnIter: IntoIterator<
+/// Note that [`Knn`] encompasses both exact and approximate nearest neighbor searches.
+/// Depend on the [`ExactSpace`] trait to ensure all searches are exact. See [`ExactSpace`] for more details.
+pub trait Knn: ApproximateSpace {
+    type KnnIter<'a>: Iterator<
         Item = (
-            <Self::Metric as Metric<Self::Point>>::Unit,
-            &'a Self::Point,
-            &'a Self::Value,
+            MetricUnit<Self::Metric, Self::PointProxy>,
+            View<'a, Self::PointProxy>,
+            View<'a, Self::ValueProxy>,
         ),
-    >;
+    >
+    where
+        Self: 'a;
 
-    /// Get `num` nearest neighbor keys and values of `target`.
+    /// Get `num` nearest neighbors' distance, key, and value relative to the `target` position.
     ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
-    fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter;
+    /// The neighbors must be sorted by distance, with the closest neighbor first.
+    fn knn<'a, 'b>(&'a self, query: View<'b, Self::PointProxy>, num: usize) -> Self::KnnIter<'a>;
 
-    /// Get the nearest neighbor key and values of `target`.
-    ///
-    /// For many KNN search algorithms, the returned neighbors are approximate, and may not
-    /// be the actual nearest neighbors.
+    /// Get the nearest neighbor's distance, key, and value relative to the `target` position.
     #[allow(clippy::type_complexity)]
-    fn nn(
+    fn nn<'a, 'b>(
         &'a self,
-        query: &Self::Point,
+        query: View<'b, Self::PointProxy>,
     ) -> Option<(
-        <Self::Metric as Metric<Self::Point>>::Unit,
-        &'a Self::Point,
-        &'a Self::Value,
-    )>;
-}
-
-/// Implement this trait on data structures (or wrappers) which perform range queries.
-/// The data structure should maintain a key-value mapping between neighbour points and data
-/// values.
-///
-/// The lifetime on the trait will be removed once GATs are stabilized.
-pub trait RangeQuery<'a>: Knn<'a> {
-    type RangeIter: IntoIterator<
-        Item = (
-            <Self::Metric as Metric<Self::Point>>::Unit,
-            &'a Self::Point,
-            &'a Self::Value,
-        ),
-    >;
-
-    /// Get all the points in the data structure that lie within a specified range of the query
-    /// point. The points may or may not be sorted by distance.
-    #[allow(clippy::type_complexity)]
-    fn range_query(
-        &self,
-        query: &Self::Point,
-        range: <Self::Metric as Metric<Self::Point>>::Unit,
-    ) -> Self::RangeIter;
-}
-
-/// Implement this trait on KNN search data structures that map keys to values and which you can
-/// insert new (key, value) pairs.
-pub trait KnnInsert<'a>: Knn<'a> {
-    /// Insert a (key, value) pair to the [`KnnMap`].
-    ///
-    /// Returns the index type
-    fn insert(&mut self, key: Self::Point, value: Self::Value);
-}
-
-/// Create a data structure from a metric and a batch of data points, such as a vector.
-/// For many algorithms, using batch initialization yields better results than inserting the points
-/// one at a time.
-pub trait KnnFromMetricAndBatch<M, B> {
-    fn from_metric_and_batch(metric: M, batch: B) -> Self;
-}
-
-/// Create a data structure from a batch of data points, such as a vector.
-/// For many algorithms, using batch initialization yields better results than inserting the points
-/// one at a time.
-pub trait KnnFromBatch<M, B>: KnnFromMetricAndBatch<M, B> {
-    fn from_batch(batch: B) -> Self;
-}
-
-impl<M, B, T> KnnFromBatch<M, B> for T
-where
-    T: KnnFromMetricAndBatch<M, B>,
-    M: Default,
-{
-    fn from_batch(batch: B) -> Self {
-        Self::from_metric_and_batch(M::default(), batch)
-    }
-}
-
-/// Performs a linear knn search by iterating over everything in the space
-/// and performing a binary search on running set of neighbors.
-///
-/// ## Example
-///
-/// ```
-/// use space::{Knn, LinearKnn, Metric, KnnFromBatch};
-///
-/// #[derive(Default)]
-/// struct Hamming;
-///
-/// impl Metric<u8> for Hamming {
-///     type Unit = u8;
-///
-///     fn distance(&self, &a: &u8, &b: &u8) -> Self::Unit {
-///         (a ^ b).count_ones() as u8
-///     }
-/// }
-///
-/// let data = vec![
-///     (0b1010_1010, 12),
-///     (0b1111_1111, 13),
-///     (0b0000_0000, 14),
-///     (0b1111_0000, 16),
-///     (0b0000_1111, 10),
-/// ];
-///
-/// let search: LinearKnn<Hamming, _> = KnnFromBatch::from_batch(data.iter());
-///
-/// assert_eq!(
-///     &search.knn(&0b0101_0000, 2),
-///     &[
-///         (2, &data[2].0, &data[2].1),
-///         (2, &data[3].0, &data[3].1),
-///     ]
-/// );
-/// ```
-#[cfg(feature = "alloc")]
-pub struct LinearKnn<M, I> {
-    pub metric: M,
-    pub points: I,
-}
-
-#[cfg(feature = "alloc")]
-impl<'a, M: Metric<P>, I, P: 'a, V: 'a> Knn<'a> for LinearKnn<M, I>
-where
-    I: Iterator<Item = &'a (P, V)> + Clone,
-{
-    type Metric = M;
-    type Point = P;
-    type Value = V;
-    type KnnIter = Vec<(M::Unit, &'a P, &'a V)>;
-
-    fn knn(&'a self, query: &Self::Point, num: usize) -> Self::KnnIter {
-        let mut dataset = self
-            .points
-            .clone()
-            .map(|(pt, val)| (self.metric.distance(pt, query), pt, val));
-
-        // Create a vector with the correct capacity in advance.
-        let mut neighbors = Vec::with_capacity(num);
-
-        // Extend the vector with the first `num` neighbors.
-        neighbors.extend((&mut dataset).take(num));
-        // Sort the vector by the neighbor distance.
-        neighbors.sort_unstable_by_key(|n| n.0);
-
-        // Iterate over each additional neighbor.
-        for point in dataset {
-            // Find the position at which it would be inserted.
-            let position = neighbors.partition_point(|n| n.0 <= point.0);
-            // If the point is closer than at least one of the points already in `neighbors`, add it
-            // into its sorted position.
-            if position != num {
-                neighbors.pop();
-                neighbors.insert(position, point);
-            }
-        }
-
-        neighbors
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn nn(
-        &self,
-        query: &Self::Point,
-    ) -> Option<(
-        <Self::Metric as Metric<Self::Point>>::Unit,
-        &'a Self::Point,
-        &'a Self::Value,
+        MetricUnit<Self::Metric, Self::PointProxy>,
+        View<'a, Self::PointProxy>,
+        View<'a, Self::ValueProxy>,
     )> {
-        // Map the input iterator into neighbors and then find the smallest one by distance.
-        self.points
-            .clone()
-            .map(|(pt, val)| (self.metric.distance(pt, query), pt, val))
-            .min_by_key(|n| n.0)
+        self.knn(query, 1).next()
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<M, I> KnnFromMetricAndBatch<M, I> for LinearKnn<M, I>
-where
-    M: Default,
-{
-    fn from_metric_and_batch(metric: M, points: I) -> Self {
-        Self { metric, points }
+/// Implement this trait on data structures (or wrappers) which perform n-sphere range queries.
+/// The data structure should maintain a key-value mapping between neighbour points and data
+/// values. It must be able to output the distance between the query point and the neighbours,
+/// which is included in the results.
+///
+/// Note that [`NSphereRangeQuery`] encompasses both exact and approximate n-sphere searches.
+/// Depend on the [`ExactSpace`] trait to ensure all searches are exact. See [`ExactSpace`] for more details.
+pub trait NSphereRangeQuery: ApproximateSpace {
+    type NSphereIter<'a>: Iterator<
+        Item = (
+            MetricUnit<Self::Metric, Self::PointProxy>,
+            View<'a, Self::PointProxy>,
+            View<'a, Self::ValueProxy>,
+        ),
+    >
+    where
+        Self: 'a;
+
+    /// Get all the neighbors in the data structure that lie within a specified range of the query n-sphere.
+    ///
+    /// The neighbors must be sorted by distance, with the closest neighbor first.
+    fn nsphere_query<'a, 'b>(
+        &'a self,
+        query: View<'b, Self::PointProxy>,
+        radius: MetricUnit<Self::Metric, Self::PointProxy>,
+    ) -> Self::NSphereIter<'a> {
+        self.nsphere_query_limited(query, radius, usize::MAX).0
     }
+
+    /// Get all the neighbors in the data structure that lie within a specified range of the query n-sphere.
+    /// You may also provide a `max_neighbors` to limit the number of neighbors returned. This is useful if you
+    /// only need neighbors with a certain region, but you need to bail out to prevent excessive searching.
+    ///
+    /// The neighbors must be sorted by distance, with the closest neighbor first.
+    ///
+    /// This returns a tuple containing the neighbors in the region and a boolean indicating if we
+    /// completely searched the region or if we stopped early due to the `max_neighbors` limit. This boolean
+    /// doesn't indicate the neighbors are complete if the algorithm is approximate, only if exact, but
+    /// it does indicate that the algorithm terminated its search. If it is `true`,
+    /// then the limit was not hit. If the result is `false`, one should not assume that neighbors of a lower
+    /// radius than the furthest found neighbor have been searched, but only that the search algorithm itself
+    /// was terminated early, so that the results are incomplete. They are still sorted by distance, however,
+    /// and search algorithms should still attempt to search closer neighbors first where possible, but it is
+    /// up to the user to use the results based on the algorithm's guarantees.
+    fn nsphere_query_limited<'a, 'b>(
+        &'a self,
+        query: View<'b, Self::PointProxy>,
+        radius: MetricUnit<Self::Metric, Self::PointProxy>,
+        max_neighbors: usize,
+    ) -> (Self::NSphereIter<'a>, bool);
+}
+
+/// Implement this trait on spatial containers that map points to values.
+pub trait SpatialContainer: ApproximateSpace + Sized {
+    type SpatialIter<'a>: Iterator<Item = (View<'a, Self::PointProxy>, View<'a, Self::ValueProxy>)>
+    where
+        Self: 'a;
+
+    /// Create a new instance of the data structure with the given metric.
+    fn with_metric(metric: Self::Metric) -> Self;
+
+    /// Insert a (point, value) pair into a spatial data structure.
+    fn insert(&mut self, point: Owned<Self::PointProxy>, value: Owned<Self::ValueProxy>);
+
+    /// Iterate over all the point, value pairs in the data structure.
+    fn iter(&self) -> Self::SpatialIter<'_>;
+
+    /// Extend the data structure with additional data from an iterator of (point, value) pairs.
+    fn extend(
+        &mut self,
+        iter: impl IntoIterator<Item = (Owned<Self::PointProxy>, Owned<Self::ValueProxy>)>,
+    ) {
+        for (point, value) in iter {
+            self.insert(point, value);
+        }
+    }
+
+    /// Create a new instance of the data structure with the given metric and an iterator of (point, value) pairs.
+    fn from_metric_and_iterator(
+        metric: Self::Metric,
+        batch: impl IntoIterator<Item = (Owned<Self::PointProxy>, Owned<Self::ValueProxy>)>,
+    ) -> Self {
+        let mut instance = Self::with_metric(metric);
+        instance.extend(batch);
+        instance
+    }
+}
+
+/// This function performs exact linear nearest neighbor search.
+///
+/// This may be useful specifically when implementing spatial containers
+/// where you need to abstract over ProxyView types.
+pub fn linear_nn<'a, 'b, M, P, V>(
+    metric: M,
+    dataset: impl Iterator<Item = (View<'a, P>, View<'a, V>)>,
+    query: View<'b, P>,
+) -> Option<(M::Unit, View<'a, P>, View<'a, V>)>
+where
+    M: Metric<P>,
+    P: ProxyView,
+    V: ProxyView,
+{
+    dataset
+        .map(|(pt, val)| (metric.distance(pt, query), pt, val))
+        .min_by_key(|n| n.0)
 }
