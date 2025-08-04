@@ -87,6 +87,8 @@ search.insert(0b0101_0001, 8);
 assert_eq!(search.nn(&0b0101_0000), Some((1, &0b0101_0001, &8)));
 ```
 
+For an example on how to create a container, a great reference may be found in tests/ndarray.rs in the repository. For brevity it is omitted here, but it shows how to create a specialized structure that uses an Array2 as the storage mechanism for Array1 points.
+
 ## Benchmarks
 
 To run the benchmarks, use the following command:
