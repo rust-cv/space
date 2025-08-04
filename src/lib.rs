@@ -1,6 +1,8 @@
 //! See the [Crates.io page](https://crates.io/crates/space) for the README.
 
 #![no_std]
+
+#[cfg(feature = "alloc")]
 doc_comment::doctest!("../README.md");
 
 #[cfg(feature = "alloc")]

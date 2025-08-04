@@ -32,6 +32,8 @@ SIMD support, and always-on 64-bit popcnt instruction support).
 
 ## Usage Examples
 
+This example shows how to use the LinearSearch and LinearContainer that come built-in by default. You would use third party containers similarly and can abstract over them using the traits like SpatialContainer and Knn.
+
 ```rust
 use pgat::ReferenceProxy;
 use space::{Knn, LinearContainer, LinearSearch, Metric, SpatialContainer};
