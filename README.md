@@ -30,29 +30,18 @@ See the [bitarray](https://crates.io/crates/bitarray) crate for an implementatio
 of `MetricPoint` using hamming distance (with optional, though unstable, 512-bit
 SIMD support, and always-on 64-bit popcnt instruction support).
 
-## Usage
+## Usage Examples
+
+This example shows how to use the LinearSearch and LinearContainer that come built-in by default. You would use third party containers similarly and can abstract over them using the traits like SpatialContainer and Knn.
 
 ```rust
-use space::Metric;
+use pgat::ReferenceProxy;
+use space::{Knn, LinearContainer, LinearSearch, Metric, SpatialContainer};
 
+#[derive(Copy, Clone, Default)]
 struct Hamming;
 
-impl Metric<u8> for Hamming {
-    type Unit = u8;
-
-    fn distance(&self, &a: &u8, &b: &u8) -> Self::Unit {
-        (a ^ b).count_ones() as u8
-    }
-}
-```
-
-```rust
-use space::{Knn, KnnFromBatch, LinearKnn, Metric};
-
-#[derive(Default)]
-struct Hamming;
-
-impl Metric<u8> for Hamming {
+impl Metric<ReferenceProxy<u8>> for Hamming {
     type Unit = u8;
 
     fn distance(&self, &a: &u8, &b: &u8) -> Self::Unit {
@@ -60,7 +49,11 @@ impl Metric<u8> for Hamming {
     }
 }
 
-let data = vec![
+// Use type aliases like below to get default proxy types (ReferenceView) on the container.
+type Container = LinearContainer<Hamming, u8, u8>;
+type Search<'a> = LinearSearch<'a, Hamming, u8, u8>;
+
+let data = [
     (0b1010_1010, 12),
     (0b1111_1111, 13),
     (0b0000_0000, 14),
@@ -68,17 +61,34 @@ let data = vec![
     (0b0000_1111, 10),
 ];
 
-let search: LinearKnn<Hamming, _> = KnnFromBatch::from_batch(data.iter());
+let search = Search::new(Hamming, &data);
 
 assert_eq!(
-    &search.knn(&0b0101_0000, 3),
+    search.knn(&0b0101_0000, 3).as_slice(),
     &[
         (2, &data[2].0, &data[2].1),
         (2, &data[3].0, &data[3].1),
         (6, &data[0].0, &data[0].1)
     ]
 );
+
+let mut search = Container::from_metric_and_iterator(Hamming, data);
+
+assert_eq!(
+    search.knn(&0b0101_0000, 3).as_slice(),
+    &[
+        (2, &data[2].0, &data[2].1),
+        (2, &data[3].0, &data[3].1),
+        (6, &data[0].0, &data[0].1)
+    ]
+);
+
+search.insert(0b0101_0001, 8);
+
+assert_eq!(search.nn(&0b0101_0000), Some((1, &0b0101_0001, &8)));
 ```
+
+For an example on how to create a container, a great reference may be found in tests/ndarray.rs in the repository. For brevity it is omitted here, but it shows how to create a specialized structure that uses an Array2 as the storage mechanism for Array1 points.
 
 ## Benchmarks
 

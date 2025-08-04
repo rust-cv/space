@@ -1,17 +1,17 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand_core::{RngCore, SeedableRng};
 use rand_pcg::Pcg64;
 use space::{Bits512, Knn, MetricPoint};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = Pcg64::from_seed([1; 32]);
-    let mut gen = || {
+    let mut generator = || {
         let mut feature = Bits512([0; 64]);
         rng.fill_bytes(&mut *feature);
         feature
     };
-    let search = gen();
-    let data = (0..16384).map(|_| gen()).collect::<Vec<_>>();
+    let search = generator();
+    let data = (0..16384).map(|_| generator()).collect::<Vec<_>>();
     c.bench_function("space: 4-nn in 16384", |b| {
         b.iter(|| space::LinearKnn(data.iter()).knn(&search, 4).len())
     })
