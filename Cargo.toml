@@ -16,7 +16,6 @@ readme = "README.md"
 
 [features]
 default = ["alloc"]
-# Enables the usage of LinearKnn, which requires Vec.
 alloc = []
 
 [dependencies]
