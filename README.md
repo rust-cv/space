@@ -49,6 +49,7 @@ impl Metric<ReferenceProxy<u8>> for Hamming {
     }
 }
 
+// Use type aliases like below to get default proxy types (ReferenceView) on the container.
 type Container = LinearContainer<Hamming, u8, u8>;
 type Search<'a> = LinearSearch<'a, Hamming, u8, u8>;
 
